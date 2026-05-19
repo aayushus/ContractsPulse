@@ -1,2 +1,21 @@
 brd/
 .DS_Store
+postgres/
+redis/
+langfuse-data/
+.agents/
+.env
+
+# Frontend (SvelteKit/Vite)
+frontend/node_modules/
+frontend/.svelte-kit/
+frontend/build/
+frontend/dist/
+
+# Backend (Python)
+backend/__pycache__/
+backend/.pytest_cache/
+*.py[cod]
+
+# Logs
+*.log
