@@ -1,6 +1,6 @@
 <script lang="ts">
 	import '../app.css';
-	import { toasts } from '$lib/toastStore';
+	import { toasts, toast } from '$lib/toastStore';
 	import { page } from '$app/stores';
 	import { authState } from '$lib/auth.svelte';
 	import { apiFetch } from '$lib/api';
@@ -62,19 +62,16 @@
 			if (res.ok) {
 				authState.setToken(data.access_token);
 				authState.setUser(data.user);
-				toasts.add({ 
-					message: isLogin ? 'Logged in successfully' : 'Account created successfully', 
-					type: 'success' 
-				});
+				toast.success(isLogin ? 'Logged in successfully' : 'Account created successfully');
 				email = '';
 				password = '';
 			} else {
 				loginError = data.detail || 'Authentication failed.';
-				toasts.add({ message: loginError, type: 'error' });
+				toast.error(loginError);
 			}
 		} catch (err: any) {
 			loginError = 'Connection error. Please try again.';
-			toasts.add({ message: loginError, type: 'error' });
+			toast.error(loginError);
 		} finally {
 			loading = false;
 		}

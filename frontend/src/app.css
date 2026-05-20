@@ -23,6 +23,50 @@
   --ease-in-out: cubic-bezier(0.65, 0, 0.35, 1);
   
   --shadow-dropdown: 0 4px 24px rgba(0, 0, 0, 0.4), 0 1px 2px rgba(0,0,0,0.4);
+
+  /* Premium Glassmorphism and Backdrop Styling */
+  --bg-glass: rgba(18, 18, 20, 0.78);
+  --bg-glass-card: rgba(28, 28, 32, 0.45);
+  --border-glass: rgba(255, 255, 255, 0.08);
+  --border-glass-hover: rgba(255, 255, 255, 0.14);
+  --shadow-premium: -10px 0 50px rgba(0, 0, 0, 0.6), 0 24px 60px rgba(0, 0, 0, 0.5);
+
+  /* Sophisticated Soft Risk Tones */
+  --color-low: #3fb950;
+  --color-medium: #d29922;
+  --color-high: #f85149;
+  --color-critical: #ff3b30;
+
+  /* Ambient Glow Scheme Colors */
+  --glow-low: rgba(63, 185, 80, 0.02);
+  --glow-low-border: rgba(63, 185, 80, 0.15);
+  --glow-medium: rgba(210, 153, 34, 0.02);
+  --glow-medium-border: rgba(210, 153, 34, 0.15);
+  --glow-high: rgba(248, 81, 73, 0.03);
+  --glow-high-border: rgba(248, 81, 73, 0.2);
+  --glow-critical: rgba(255, 59, 48, 0.04);
+  --glow-critical-border: rgba(255, 59, 48, 0.25);
+}
+
+/* Custom Scrollbars */
+::-webkit-scrollbar {
+  width: 8px;
+  height: 8px;
+}
+::-webkit-scrollbar-track {
+  background: transparent;
+}
+::-webkit-scrollbar-thumb {
+  background: rgba(255, 255, 255, 0.08);
+  border-radius: 99px;
+  border: 2px solid transparent;
+  background-clip: padding-box;
+  transition: background 150ms ease;
+}
+::-webkit-scrollbar-thumb:hover {
+  background: rgba(255, 255, 255, 0.18);
+  border: 2px solid transparent;
+  background-clip: padding-box;
 }
 
 * {
