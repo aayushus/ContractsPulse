@@ -3,6 +3,7 @@
 	import { goto } from '$app/navigation';
 	import { apiFetch } from '$lib/api';
 	import { toast } from '$lib/toastStore';
+	import { glow } from '$lib/actions';
 
 	type ContractSummary = {
 		id: string;
@@ -270,19 +271,19 @@
 <div class="page-content">
 	<!-- Glassmorphic Portfolio Metrics Grid -->
 	<div class="metric-row">
-		<div class="metric-card panel bg-glass-card">
+		<div class="metric-card panel bg-glass-card" use:glow>
 			<div class="metric-label">Total Documents</div>
 			<div class="metric-value text-primary">{totalCount}</div>
 		</div>
-		<div class="metric-card panel bg-glass-card">
+		<div class="metric-card panel bg-glass-card" use:glow>
 			<div class="metric-label">Processing Queue</div>
 			<div class="metric-value" class:text-warning={queueCount > 0} class:text-tertiary={queueCount === 0}>{queueCount}</div>
 		</div>
-		<div class="metric-card panel bg-glass-card">
+		<div class="metric-card panel bg-glass-card" use:glow>
 			<div class="metric-label">Vulnerability Rate</div>
 			<div class="metric-value" class:text-danger={riskyCount > 0} class:text-primary={riskyCount === 0}>{riskyRate}</div>
 		</div>
-		<div class="metric-card panel bg-glass-card">
+		<div class="metric-card panel bg-glass-card" use:glow>
 			<div class="metric-label">Obligations Analyzed</div>
 			<div class="metric-value text-secondary">{totalObligationsCount}</div>
 		</div>
@@ -544,6 +545,21 @@
 		padding: 20px;
 		background: var(--bg-glass-card);
 		border: 1px solid var(--border-glass);
+		border-radius: 8px;
+		cursor: pointer;
+		transition: border-color 220ms var(--ease-spring-gentle), 
+		            transform 200ms var(--ease-spring-gentle), 
+		            box-shadow 220ms var(--ease-spring-gentle);
+	}
+
+	.metric-card:hover {
+		transform: translateY(-2px);
+		border-color: rgba(255, 255, 255, 0.15);
+		box-shadow: 0 8px 30px rgba(0, 0, 0, 0.3);
+	}
+
+	.metric-card:active {
+		transform: translateY(-1px) scale(0.98);
 	}
 
 	.metric-label {

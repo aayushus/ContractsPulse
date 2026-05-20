@@ -3,6 +3,7 @@
 	import { goto } from '$app/navigation';
 	import { toast } from '$lib/toastStore';
 	import { apiFetch } from '$lib/api';
+	import { glow } from '$lib/actions';
 
 	type ContractSummary = {
 		id: string;
@@ -261,19 +262,19 @@
 
 <div class="page-content">
 	<div class="metric-row">
-		<div class="metric-card panel">
+		<div class="metric-card panel" use:glow>
 			<div class="metric-label">Active Contracts</div>
 			<div class="metric-value">{contracts.length}</div>
 		</div>
-		<div class="metric-card panel">
+		<div class="metric-card panel" use:glow>
 			<div class="metric-label">High Risk Clauses</div>
 			<div class="metric-value text-danger">{contracts.filter(c => c.overall_risk === 'HIGH' || c.overall_risk === 'CRITICAL').length}</div>
 		</div>
-		<div class="metric-card panel">
+		<div class="metric-card panel" use:glow>
 			<div class="metric-label">Expiring &lt; 30 Days</div>
 			<div class="metric-value text-warning">--</div>
 		</div>
-		<div class="metric-card panel">
+		<div class="metric-card panel" use:glow>
 			<div class="metric-label">In Negotiation</div>
 			<div class="metric-value">--</div>
 		</div>
@@ -450,9 +451,9 @@
 		border: 1px solid var(--border-glass);
 		border-radius: 12px;
 		padding: 24px 20px;
-		transition: transform 180ms var(--ease-out), 
-					border-color 180ms var(--ease-out), 
-					box-shadow 180ms var(--ease-out);
+		transition: border-color 220ms var(--ease-spring-gentle), 
+		            transform 200ms var(--ease-spring-gentle), 
+		            box-shadow 220ms var(--ease-spring-gentle);
 		cursor: pointer;
 		position: relative;
 		overflow: hidden;
@@ -465,7 +466,7 @@
 	}
 
 	.metric-card:active {
-		transform: scale(0.975);
+		transform: translateY(-1px) scale(0.975);
 	}
 
 	.metric-card::before {

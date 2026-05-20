@@ -306,3 +306,44 @@ h1, h2, h3, h4, h5 {
 .risk-medium { background: #d29922; }
 .risk-high { background: #f85149; }
 .risk-critical { background: #ff3b30; }
+
+/* ------------------------------------------------------------
+   Premium Pointer-Tracking Glow Cards & Smooth Sprung Transitions
+   ------------------------------------------------------------- */
+.premium-glow-card {
+  position: relative;
+  overflow: hidden;
+}
+
+.premium-glow-card::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  z-index: 0;
+  pointer-events: none;
+  opacity: 0;
+  transition: opacity 350ms cubic-bezier(0.16, 1, 0.3, 1);
+  background: radial-gradient(
+    380px circle at var(--mouse-x, 0px) var(--mouse-y, 0px),
+    var(--glow-color, rgba(255, 255, 255, 0.045)),
+    transparent 80%
+  );
+}
+
+.premium-glow-card:hover::after {
+  opacity: 1;
+}
+
+/* Ensure all interactive/text elements within the glow card sit above the canvas */
+.premium-glow-card > * {
+  position: relative;
+  z-index: 1;
+}
+
+/* Premium Elastic Springs */
+:root {
+  --ease-spring: cubic-bezier(0.34, 1.56, 0.64, 1);
+  --ease-spring-gentle: cubic-bezier(0.25, 1, 0.5, 1);
+  --ease-drawer: cubic-bezier(0.32, 0.72, 0, 1);
+}
+

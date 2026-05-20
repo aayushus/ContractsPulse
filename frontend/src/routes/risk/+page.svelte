@@ -3,6 +3,7 @@
 	import { goto } from '$app/navigation';
 	import { apiFetch } from '$lib/api';
 	import { toast } from '$lib/toastStore';
+	import { glow } from '$lib/actions';
 
 	type RiskItem = {
 		id: string;
@@ -143,28 +144,28 @@
 <div class="page-content">
 	<!-- Workspace Overview Metrics Grid -->
 	<div class="metric-row">
-		<div class="metric-card panel bg-glass-card">
+		<div class="metric-card panel bg-glass-card" use:glow>
 			<div class="metric-header flex-between">
 				<span class="metric-label">Critical Vulnerabilities</span>
 				<span class="m-dot m-dot-critical"></span>
 			</div>
 			<div class="metric-value text-critical font-bold">{criticalCount}</div>
 		</div>
-		<div class="metric-card panel bg-glass-card">
+		<div class="metric-card panel bg-glass-card" use:glow>
 			<div class="metric-header flex-between">
 				<span class="metric-label">High-Risk Clauses</span>
 				<span class="m-dot m-dot-high"></span>
 			</div>
 			<div class="metric-value text-high font-bold">{highCount}</div>
 		</div>
-		<div class="metric-card panel bg-glass-card">
+		<div class="metric-card panel bg-glass-card" use:glow>
 			<div class="metric-header flex-between">
 				<span class="metric-label">Affected Documents</span>
 				<span class="m-dot m-dot-neutral"></span>
 			</div>
 			<div class="metric-value text-primary">{affectedDocsCount}</div>
 		</div>
-		<div class="metric-card panel bg-glass-card">
+		<div class="metric-card panel bg-glass-card" use:glow>
 			<div class="metric-header flex-between">
 				<span class="metric-label">Average Risks/Document</span>
 				<span class="m-dot m-dot-neutral"></span>
@@ -237,7 +238,7 @@
 			{#each filteredRisks as r (r.id)}
 				{@const isCritical = r.risk_level === 'CRITICAL'}
 				{@const isExpanded = expandedRedlines[r.id]}
-				<div class="risk-card panel risk-{r.risk_level.toLowerCase()}" class:card-expanded={isExpanded}>
+				<div class="risk-card panel risk-{r.risk_level.toLowerCase()}" class:card-expanded={isExpanded} use:glow={{ color: r.risk_level === 'CRITICAL' ? 'rgba(255, 59, 48, 0.08)' : 'rgba(248, 81, 73, 0.05)' }}>
 					<!-- Header Section -->
 					<div class="risk-card-header flex-between">
 						<div class="risk-origin flex-row gap-8">
@@ -554,9 +555,19 @@
 	.risk-card {
 		padding: 24px;
 		background: var(--bg-panel);
-		transition: border-color 200ms var(--ease-out), transform 150ms var(--ease-out);
+		transition: border-color 220ms var(--ease-spring-gentle), 
+		            transform 200ms var(--ease-spring-gentle), 
+		            box-shadow 220ms var(--ease-spring-gentle);
 		position: relative;
 		overflow: hidden;
+	}
+
+	.risk-card:hover {
+		transform: translateY(-2px);
+	}
+
+	.risk-card:active {
+		transform: translateY(-1px) scale(0.99);
 	}
 
 	.risk-card::before {
