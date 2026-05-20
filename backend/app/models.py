@@ -35,7 +35,7 @@ class Contract(Base):
 
     id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
     filename = Column(String, nullable=False)
-    file_hash = Column(String, unique=True, index=True, nullable=True)
+    file_hash = Column(String, index=True, nullable=True)
     status = Column(Enum(ContractStatus), default=ContractStatus.PENDING)
     user_id = Column(UUID(as_uuid=True), ForeignKey("users.id", ondelete="CASCADE"), nullable=True)
     

@@ -203,8 +203,18 @@ async def create_contract_from_text(
 async def startup_event():
     with engine.begin() as conn:
         conn.execute(text("CREATE EXTENSION IF NOT EXISTS vector;"))
+    
+    # Remove unique index constraint on contracts.file_hash if it exists to allow per-user duplicate uploads
+    with engine.begin() as conn:
+        conn.execute(text("ALTER TABLE contracts DROP CONSTRAINT IF EXISTS uq_contracts_file_hash;"))
+        conn.execute(text("DROP INDEX IF EXISTS ix_contracts_file_hash;"))
+        
     Base.metadata.create_all(bind=engine)
     
+    # Re-create index as non-unique
+    with engine.begin() as conn:
+        conn.execute(text("CREATE INDEX IF NOT EXISTS ix_contracts_file_hash ON contracts(file_hash);"))
+        
     # Lightweight schema catch-up for additive columns (demo-friendly; avoids migrations).
     with engine.begin() as conn:
         conn.execute(
