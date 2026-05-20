@@ -817,6 +817,99 @@ async def list_contracts(
     return {"contracts": result}
 
 
+@app.get("/api/v1/risks")
+async def list_all_risks(
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user)
+):
+    """
+    Fetch all high and critical severity risk clauses across all completed contracts owned by the current user.
+    """
+    contracts = (
+        db.query(Contract)
+        .filter(Contract.user_id == current_user.id, Contract.status == ContractStatus.COMPLETED)
+        .all()
+    )
+    contract_ids = [c.id for c in contracts]
+    contract_map = {str(c.id): c for c in contracts}
+    
+    if not contract_ids:
+        return {"risks": []}
+        
+    # Query clauses with HIGH or CRITICAL risk
+    clauses = (
+        db.query(ContractClause)
+        .filter(
+            ContractClause.contract_id.in_(contract_ids),
+            ContractClause.risk_level.in_([RiskLevel.HIGH, RiskLevel.CRITICAL])
+        )
+        .all()
+    )
+    
+    # Sort clauses: CRITICAL first, then HIGH
+    severity_order = {"CRITICAL": 0, "HIGH": 1}
+    clauses = sorted(
+        clauses,
+        key=lambda c: severity_order.get(c.risk_level.value if c.risk_level else "HIGH", 9)
+    )
+    
+    result = []
+    for c in clauses:
+        contract_obj = contract_map.get(str(c.contract_id))
+        if not contract_obj:
+            continue
+            
+        # Resolve redline suggestion
+        redline = c.redline_suggestion
+        if not redline or not redline.strip():
+            redline = _heuristic_redline(c.clause_type, c.text_content, c.risk_level.value if c.risk_level else "LOW")
+            
+        result.append({
+            "id": str(c.id),
+            "contract_id": str(c.contract_id),
+            "contract_filename": contract_obj.filename,
+            "clause_type": c.clause_type,
+            "text_content": c.text_content,
+            "risk_level": c.risk_level.value if c.risk_level else "LOW",
+            "risk_reasoning": c.risk_reasoning,
+            "redline_suggestion": redline,
+            "created_at": contract_obj.created_at.isoformat()
+        })
+        
+    return {"risks": result}
+
+
+@app.get("/api/v1/contracts/{contract_id}")
+async def get_contract(
+    contract_id: str,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user)
+):
+    contract = db.query(Contract).filter(Contract.id == contract_id, Contract.user_id == current_user.id).first()
+    if not contract:
+        raise HTTPException(status_code=404, detail="Contract not found")
+        
+    overall_risk = "LOW"
+    risk_counts = (contract.metadata_json or {}).get("risk_counts", {})
+    if risk_counts.get("CRITICAL", 0) > 0:
+        overall_risk = "CRITICAL"
+    elif risk_counts.get("HIGH", 0) > 0:
+        overall_risk = "HIGH"
+    elif risk_counts.get("MEDIUM", 0) > 0:
+        overall_risk = "MEDIUM"
+
+    return {
+        "contract": {
+            "id": str(contract.id),
+            "filename": contract.filename,
+            "status": contract.status.value,
+            "metadata_json": contract.metadata_json,
+            "overall_risk": overall_risk if contract.status == ContractStatus.COMPLETED else None,
+            "created_at": contract.created_at.isoformat()
+        }
+    }
+
+
 # ---------------------------------------------------------------------------
 # Story 011 / 012: Structured report endpoint (used by CLI analyze + report)
 # ---------------------------------------------------------------------------

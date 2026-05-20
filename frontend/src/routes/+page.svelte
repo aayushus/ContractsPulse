@@ -1,5 +1,6 @@
 <script lang="ts">
 	import { onMount, onDestroy } from 'svelte';
+	import { goto } from '$app/navigation';
 	import { toast } from '$lib/toastStore';
 	import { apiFetch } from '$lib/api';
 
@@ -33,59 +34,7 @@
 	// Track which contracts were previously in PROCESSING state
 	let processingIds = new Set<string>();
 
-	let now = $state(Date.now());
-	let stopwatchInterval: any;
-	let liveSteps = $state<{text: string, startTime: number, endTime: number | null}[]>([]);
 	let apiBase = $state('http://localhost:9432');
-	let processingStatus = $state<any>(null);
-
-	$effect(() => {
-		if (selectedContract && selectedContract.status === 'PROCESSING') {
-			const step = selectedContract.metadata_json?.processing_step;
-			if (step) {
-				const lastStep = liveSteps[liveSteps.length - 1];
-				if (!lastStep || lastStep.text !== step) {
-					// Mark previous step as done
-					if (lastStep && !lastStep.endTime) {
-						lastStep.endTime = Date.now();
-					}
-					// Add new step
-					liveSteps = [...liveSteps, { text: step, startTime: Date.now(), endTime: null }];
-				}
-			}
-		} else if (selectedContract && (selectedContract.status === 'COMPLETED' || selectedContract.status === 'FAILED')) {
-			// Cap the last step if it finishes
-			const lastStep = liveSteps[liveSteps.length - 1];
-			if (lastStep && !lastStep.endTime) {
-				lastStep.endTime = Date.now();
-			}
-		}
-	});
-
-	function formatStopwatch(ms: number) {
-		if (!ms || ms < 0) return "0.0s";
-		return (ms / 1000).toFixed(1) + "s";
-	}
-
-	async function formatEta(seconds: number | null | undefined) {
-		if (seconds === null || seconds === undefined) return '--';
-		if (seconds <= 1) return '< 1s';
-		const s = Math.max(0, Math.floor(seconds));
-		const m = Math.floor(s / 60);
-		const r = s % 60;
-		if (m <= 0) return `~${r}s`;
-		return `~${m}m ${r}s`;
-	}
-
-	async function fetchProcessingStatus(contractId: string) {
-		try {
-			const res = await apiFetch(`/api/v1/contracts/${contractId}/status`);
-			if (!res.ok) return;
-			processingStatus = await res.json();
-		} catch {
-			// non-fatal
-		}
-	}
 
 	async function fetchContracts() {
 		try {
@@ -107,23 +56,6 @@
 				});
 				
 				contracts = json.contracts;
-				
-				const sc = selectedContract;
-				if (sc) {
-					const updated = contracts.find((c: any) => c.id === sc.id);
-					if (updated) {
-						selectedContract = updated;
-						// If it just completed while drawer is open, fetch clauses automatically
-						if ((updated.status === 'COMPLETED' || updated.status === 'FAILED') && drawerClauses.length === 0 && !isDrawerLoading) {
-							loadDrawerClauses(updated.id);
-						}
-						if (updated.status === 'PROCESSING') {
-							fetchProcessingStatus(updated.id);
-						} else {
-							processingStatus = null;
-						}
-					}
-				}
 			}
 		} catch (err) {
 			console.error("Failed to fetch contracts:", err);
@@ -137,46 +69,17 @@
 
 		fetchContracts();
 		pollInterval = setInterval(fetchContracts, 3000);
-		stopwatchInterval = setInterval(() => { now = Date.now(); }, 100);
 	});
 
 	onDestroy(() => {
 		if (pollInterval) clearInterval(pollInterval);
-		if (stopwatchInterval) clearInterval(stopwatchInterval);
 	});
 
 	function triggerUpload() {
 		if (fileInput) fileInput.click();
 	}
 
-	async function copyClauseRedline(clause: any) {
-		if (!clause?.redline_suggestion) return;
-		const payload =
-			`${clause.clause_type ? `Clause: ${clause.clause_type}\n\n` : ''}` +
-			`Original:\n${clause.text_content || ''}\n\n` +
-			`Suggested replacement:\n${clause.redline_suggestion}\n\n` +
-			`Rationale:\n${clause.risk_reasoning || ''}\n`;
-		try {
-			await navigator.clipboard.writeText(payload);
-			toast.success('Redline copied to clipboard.');
-		} catch (e) {
-			// Fallback for older browsers / stricter permissions
-			try {
-				const ta = document.createElement('textarea');
-				ta.value = payload;
-				ta.style.position = 'fixed';
-				ta.style.left = '-9999px';
-				document.body.appendChild(ta);
-				ta.focus();
-				ta.select();
-				document.execCommand('copy');
-				document.body.removeChild(ta);
-				toast.success('Redline copied to clipboard.');
-			} catch {
-				toast.error('Failed to copy. Select the text and copy manually.');
-			}
-		}
-	}
+
 
 	async function handlePasteAnalyze() {
 		const text = (pastedText || '').trim();
@@ -289,9 +192,6 @@
 				toast.dismiss(loadingToastId);
 				toast.success('Contract deleted.');
 				fetchContracts();
-				if (selectedContract?.id === contractId) {
-					closeDrawer();
-				}
 			} else {
 				throw new Error('Delete failed');
 			}
@@ -301,11 +201,6 @@
 		}
 	}
 
-	let selectedContract: ContractSummary | null = $state(null);
-	let drawerOpen = $state(false);
-	let drawerClauses: Clause[] = $state([]);
-	let isDrawerLoading = $state(false);
-
 	function getProcessingPhase(step: string | undefined | null) {
 		if (!step) return "Initializing";
 		const s = step.toLowerCase();
@@ -313,47 +208,6 @@
 		if (s.includes('analyz')) return "Thinking";
 		if (s.includes('sav')) return "Executing";
 		return "Processing";
-	}
-
-	async function loadDrawerClauses(contractId: string) {
-		isDrawerLoading = true;
-		try {
-			const res = await apiFetch(`/api/v1/contracts/${contractId}/clauses`);
-			const data = await res.json();
-			drawerClauses = (data.clauses || []) as Clause[];
-		} catch (error) {
-			console.error("Failed to fetch clauses:", error);
-			toast.error("Failed to load contract details");
-		}
-		isDrawerLoading = false;
-	}
-
-	async function openDrawer(contract: ContractSummary) {
-		selectedContract = contract;
-		drawerOpen = true;
-		drawerClauses = [];
-		processingStatus = null;
-		
-		if (contract.status === 'PROCESSING') {
-			// Initialize liveSteps from current step if empty or mismatched
-			const step = contract.metadata_json?.processing_step;
-			if (step) {
-				liveSteps = [{ text: step, startTime: Date.now(), endTime: null }];
-			} else {
-				liveSteps = [];
-			}
-			fetchProcessingStatus(contract.id);
-		} else if (contract.status === 'COMPLETED' || contract.status === 'FAILED') {
-			await loadDrawerClauses(contract.id);
-		}
-	}
-	
-	function closeDrawer() {
-		drawerOpen = false;
-		setTimeout(() => {
-			selectedContract = null;
-			drawerClauses = [];
-		}, 300); // Wait for transition
 	}
 
 	function timeAgo(dateString: string) {
@@ -446,10 +300,10 @@
 			<!-- svelte-ignore a11y_click_events_have_key_events -->
 			<!-- svelte-ignore a11y_no_static_element_interactions -->
 			<div class="table-row clickable-row" onclick={(e: MouseEvent) => {
-				// Don't open drawer if they clicked the reprocess or delete button
+				// Don't navigate if they clicked the reprocess or delete button
 				const target = e.target as HTMLElement | null;
 				if (!target || !target.closest('.btn-icon')) {
-					openDrawer(contract);
+					goto(`/contracts/${contract.id}`);
 				}
 			}}>
 				<div class="col col-name">
@@ -544,217 +398,7 @@
 		</div>
 	{/if}
 
-	{#if drawerOpen}
-		<button type="button" class="drawer-overlay" aria-label="Close" onclick={closeDrawer}></button>
-		
-		<div class="drawer {drawerOpen ? 'open' : ''}">
-			<div class="drawer-header">
-				<h2 class="drawer-title">{selectedContract?.filename}</h2>
-				<button class="drawer-close" onclick={closeDrawer} aria-label="Close drawer">
-					<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M18 6L6 18M6 6l12 12"/></svg>
-				</button>
-			</div>
-			
-			<div class="drawer-content">
-				{#if isDrawerLoading}
-					<div class="drawer-loading">
-						<span class="spinner spinner-lg"></span>
-						<p>Loading details...</p>
-					</div>
-				{:else}
-				<div class="drawer-section">
-					<h3>Overview</h3>
-					<div class="drawer-meta">
-						<div class="meta-item">
-							<span class="meta-label">Status</span>
-							{#if selectedContract?.status === 'COMPLETED'}
-								<span class="badge badge-success">Completed</span>
-							{:else if selectedContract?.status === 'FAILED'}
-								<span class="badge badge-danger">Failed</span>
-							{:else}
-								{@const phase = getProcessingPhase(selectedContract?.metadata_json?.processing_step)}
-								<div class="thinking-indicator thinking-indicator-compact" title={selectedContract?.metadata_json?.processing_step || "Processing"}>
-									<span class="spinner spinner-sm"></span>
-									<span class="thinking-label">{phase}</span>
-									<span class="thinking-step">{selectedContract?.metadata_json?.processing_step || "Processing..."}</span>
-								</div>
-							{/if}
-						</div>
-						<div class="meta-item">
-							<span class="meta-label">Uploaded</span>
-							<span>{selectedContract ? timeAgo(selectedContract.created_at) : '--'}</span>
-						</div>
-					</div>
-				</div>
 
-				{#if selectedContract?.status === 'COMPLETED' && selectedContract?.metadata_json?.top_risks?.length}
-					<div class="drawer-section">
-						<h3>Top Risks</h3>
-						<div class="clauses-list">
-							{#each selectedContract.metadata_json.top_risks as r}
-								<div class="clause-card risk-{(r.risk_level || 'LOW').toLowerCase()}">
-									<div class="clause-header">
-										<span class="clause-type">{r.clause_type || 'Clause'}</span>
-										<span class="badge badge-{r.risk_level === 'CRITICAL' || r.risk_level === 'HIGH' ? 'danger' : r.risk_level === 'MEDIUM' ? 'warning' : 'success'}">{r.risk_level}</span>
-									</div>
-									{#if r.auto_renewal}
-										<div class="text-tertiary" style="margin: 6px 0 2px;">
-											<strong>Auto-renewal:</strong>
-											{#if r.auto_renewal.opt_out_days_before_renewal}
-												You must cancel at least {r.auto_renewal.opt_out_days_before_renewal} days before renewal to avoid auto-renewal.
-											{:else}
-												This clause appears to include auto-renewal language. Confirm the opt-out deadline.
-											{/if}
-										</div>
-									{/if}
-									<div class="clause-reasoning">
-										<strong>Why it matters:</strong> {r.risk_reasoning || 'Flagged as risky.'}
-									</div>
-									{#if r.text_excerpt}
-										<div class="clause-text" style="margin-top: 8px;">{r.text_excerpt}</div>
-									{/if}
-								</div>
-							{/each}
-						</div>
-					</div>
-				{/if}
-
-				{#if selectedContract?.status === 'PROCESSING'}
-					<div class="drawer-section">
-						<h3>Live Processing Trace</h3>
-						{#if processingStatus}
-							<div class="processing-meta">
-								<div class="pm-item">
-									<span class="pm-label">Stage</span>
-									<span class="pm-value">{processingStatus.stage?.label || 'Processing'} ({processingStatus.stage?.index || 0}/{processingStatus.stage?.count || 3})</span>
-								</div>
-								<div class="pm-item">
-									<span class="pm-label">ETA</span>
-									<span class="pm-value">{formatEta(processingStatus.eta_seconds)}</span>
-								</div>
-								{#if processingStatus.progress}
-									<div class="pm-item">
-										<span class="pm-label">Progress</span>
-										<span class="pm-value">{processingStatus.progress.current}/{processingStatus.progress.total}</span>
-									</div>
-								{/if}
-							</div>
-						{/if}
-						<div class="timeline">
-							{#each liveSteps as step, i}
-								<div class="timeline-step">
-									<div class="timeline-icon {step.endTime ? 'done' : 'active'}">
-										{#if step.endTime}
-											<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3"><polyline points="20 6 9 17 4 12"></polyline></svg>
-										{:else}
-											<span class="spinner" style="width: 10px; height: 10px; border-width: 2px;"></span>
-										{/if}
-									</div>
-									<div class="timeline-content">
-										<div class="timeline-text">{step.text}</div>
-										<div class="timeline-time {step.endTime ? 'text-tertiary' : 'time-active'}">
-											{#if step.endTime}
-												{formatStopwatch(step.endTime - step.startTime)}
-											{:else}
-												{formatStopwatch(now - step.startTime)}
-											{/if}
-										</div>
-									</div>
-								</div>
-							{/each}
-						</div>
-					</div>
-				{/if}
-
-					{#if selectedContract?.status === 'COMPLETED' || selectedContract?.status === 'FAILED'}
-						<div class="drawer-section">
-							<h3>Extracted Clauses ({drawerClauses.length})</h3>
-							{#if drawerClauses.length === 0}
-								<p class="text-tertiary">No clauses extracted.</p>
-							{:else}
-								<div class="clauses-list">
-									{#each drawerClauses as clause}
-										<div class="clause-card risk-{clause.risk_level.toLowerCase()}">
-											<div class="clause-header">
-												<span class="clause-type">{clause.clause_type}</span>
-												<span
-													class="badge badge-{clause.risk_level === 'CRITICAL' || clause.risk_level === 'HIGH'
-														? 'danger'
-														: clause.risk_level === 'MEDIUM'
-															? 'warning'
-															: 'success'}"
-												>
-													{clause.risk_level}
-												</span>
-											</div>
-											<div class="clause-text">{clause.text_content}</div>
-											<div class="clause-reasoning">
-												<strong>Rationale:</strong> {clause.risk_reasoning}
-											</div>
-											{#if clause.redline_suggestion}
-												<div class="clause-redline">
-													<div class="clause-redline-head">
-														<strong>Suggested Redline</strong>
-														<button class="btn btn-secondary btn-compact" onclick={() => copyClauseRedline(clause)}>Copy</button>
-													</div>
-													<pre class="clause-redline-block">{clause.redline_suggestion}</pre>
-												</div>
-											{/if}
-
-											{#if clause.risk_debug_json && Object.keys(clause.risk_debug_json).length}
-												<details class="clause-tech">
-													<summary>Technical details</summary>
-													<div class="tech-grid">
-														<div class="tech-row">
-															<span class="tech-label">Model</span>
-															<span class="tech-value">{clause.risk_debug_json.model || '--'}</span>
-														</div>
-														<div class="tech-row">
-															<span class="tech-label">Latency</span>
-															<span class="tech-value">{clause.risk_debug_json.latency_ms ?? '--'}ms</span>
-														</div>
-														<div class="tech-row">
-															<span class="tech-label">Composite</span>
-															<span class="tech-value">{clause.risk_debug_json.composite_score ?? '--'}</span>
-														</div>
-														<div class="tech-row">
-															<span class="tech-label">Confidence</span>
-															<span class="tech-value">{clause.risk_debug_json.confidence ?? '--'}</span>
-														</div>
-													</div>
-
-													{#if clause.risk_debug_json.dimensions}
-														{@const dims = clause.risk_debug_json.dimensions as Record<string, number>}
-														<div class="tech-dims">
-															{#each Object.entries(dims) as [k, v] (k)}
-																{#if v > 0}
-																	<div class="dim-row">
-																		<span class="dim-key">{k}</span>
-																		<span class="dim-val">{v}</span>
-																	</div>
-																{/if}
-															{/each}
-														</div>
-													{/if}
-												</details>
-											{/if}
-										</div>
-									{/each}
-								</div>
-							{/if}
-						</div>
-					{/if}
-
-				<div class="drawer-section">
-					<h3>Raw OCR Text</h3>
-					<div class="raw-text-container">
-						{selectedContract?.metadata_json?.raw_text || "Raw text not available."}
-					</div>
-				</div>
-			{/if}
-		</div>
-	</div>
-{/if}
 
 <style>
 	.page-header {
