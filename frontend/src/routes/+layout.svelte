@@ -14,7 +14,18 @@
 	let loginError = $state('');
 	let loading = $state(false);
 
+	let theme = $state<'light' | 'dark'>('light');
+
+	function toggleTheme() {
+		theme = theme === 'light' ? 'dark' : 'light';
+		localStorage.setItem('cp_theme', theme);
+		document.documentElement.setAttribute('data-theme', theme);
+	}
+
 	onMount(async () => {
+		// Initialize theme preference (default to light)
+		theme = (localStorage.getItem('cp_theme') as 'light' | 'dark') || 'light';
+		document.documentElement.setAttribute('data-theme', theme);
 		// Fetch signup status first
 		try {
 			const statusRes = await apiFetch('/api/v1/auth/signup-status');
@@ -201,6 +212,15 @@
 						<div class="user-email" title={authState.user.email}>{authState.user.email}</div>
 					</div>
 				{/if}
+				<button type="button" class="nav-item nav-item-button" onclick={toggleTheme}>
+					{#if theme === 'light'}
+						<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="5"/><line x1="12" y1="1" x2="12" y2="3"/><line x1="12" y1="21" x2="12" y2="23"/><line x1="4.22" y1="4.22" x2="5.64" y2="5.64"/><line x1="18.36" y1="18.36" x2="19.78" y2="19.78"/><line x1="1" y1="12" x2="3" y2="12"/><line x1="21" y1="12" x2="23" y2="12"/><line x1="4.22" y1="19.78" x2="5.64" y2="18.36"/><line x1="18.36" y1="5.64" x2="19.78" y2="4.22"/></svg>
+						Dark Mode
+					{:else}
+						<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z"/></svg>
+						Light Mode
+					{/if}
+				</button>
 				<button type="button" class="nav-item nav-item-button" onclick={() => authState.logout()}>
 					<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"/><polyline points="16 17 21 12 16 7"/><line x1="21" y1="12" x2="9" y2="12"/></svg>
 					Sign Out
@@ -238,28 +258,37 @@
 		bottom: 24px;
 		right: 24px;
 		display: flex;
-		flex-direction: column;
+		flex-direction: column-reverse;
 		gap: 8px;
 		z-index: 100;
 		pointer-events: none;
 	}
 
 	:global(.toast) {
-		background: #1c1c1e;
+		background: var(--bg-panel);
 		border: 1px solid var(--border-subtle);
-		color: #fff;
+		color: var(--text-primary);
 		padding: 12px 16px;
 		border-radius: 8px;
 		font-size: 13px;
 		font-weight: 500;
-		box-shadow: 0 8px 24px rgba(0,0,0,0.4);
+		box-shadow: var(--shadow-premium);
 		pointer-events: auto;
-		animation: slideIn 0.3s cubic-bezier(0.23, 1, 0.32, 1) forwards;
+		animation: slideIn 220ms var(--ease-out) forwards;
 		transform-origin: bottom center;
 	}
 
-	:global(.toast-error) { border-color: rgba(248, 81, 73, 0.5); }
-	:global(.toast-success) { border-color: rgba(63, 185, 80, 0.5); }
+	:global(.toast-error) {
+		border-color: var(--glow-critical-border);
+		box-shadow: 0 8px 30px var(--glow-critical);
+		color: var(--color-critical);
+	}
+	
+	:global(.toast-success) {
+		border-color: var(--glow-low-border);
+		box-shadow: 0 8px 30px var(--glow-low);
+		color: var(--color-low);
+	}
 
 	:global(.toast-content) {
 		display: flex;
@@ -268,7 +297,7 @@
 	}
 
 	@keyframes slideIn {
-		from { opacity: 0; transform: translateY(20px) scale(0.95); }
+		from { opacity: 0; transform: translateY(12px) scale(0.95); }
 		to { opacity: 1; transform: translateY(0) scale(1); }
 	}
 
@@ -348,7 +377,8 @@
 		font-weight: 500;
 		border-radius: 6px;
 		margin-bottom: 2px;
-		transition: background 100ms ease, color 100ms ease;
+		position: relative;
+		transition: background 160ms var(--ease-out), color 160ms var(--ease-out), transform 120ms var(--ease-out);
 	}
 
 	.nav-item:hover {
@@ -356,14 +386,31 @@
 		color: var(--text-primary);
 	}
 
+	.nav-item:active {
+		transform: scale(0.965);
+	}
+
 	.nav-item.active {
 		background: var(--bg-active);
 		color: var(--text-primary);
 	}
 
+	.nav-item.active::before {
+		content: '';
+		position: absolute;
+		left: 0;
+		top: 6px;
+		bottom: 6px;
+		width: 3px;
+		background-color: var(--accent-primary);
+		border-radius: 99px;
+	}
+
 	.main-content {
 		flex: 1;
 		background: var(--bg-app);
+		background-image: radial-gradient(var(--dot-color) 1px, transparent 1px);
+		background-size: 20px 20px;
 		overflow-y: auto;
 		display: flex;
 		flex-direction: column;

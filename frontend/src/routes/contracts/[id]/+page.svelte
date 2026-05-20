@@ -4,6 +4,7 @@
 	import { goto } from '$app/navigation';
 	import { apiFetch } from '$lib/api';
 	import { toast } from '$lib/toastStore';
+	import { premiumCard } from '$lib/actions';
 
 	type ContractDetail = {
 		id: string;
@@ -48,6 +49,150 @@
 
 	// Modals
 	let deleteModalOpen = $state(false);
+
+	// Highlight & Bi-directional sync states
+	let hoveredClauseId = $state<string | null>(null);
+	let selectedClauseId = $state<string | null>(null);
+
+	function escapeHtml(text: string) {
+		return text
+			.replace(/&/g, '&amp;')
+			.replace(/</g, '&lt;')
+			.replace(/>/g, '&gt;')
+			.replace(/"/g, '&quot;')
+			.replace(/'/g, '&#039;');
+	}
+
+	let highlightedHtml = $derived.by(() => {
+		const rawText = contract?.metadata_json?.raw_text;
+		if (!rawText) return '';
+		if (clauses.length === 0) return escapeHtml(rawText);
+
+		interface Match {
+			start: number;
+			end: number;
+			clause: Clause;
+		}
+		const matches: Match[] = [];
+
+		clauses.forEach((clause) => {
+			const textToFind = clause.text_content.trim();
+			if (!textToFind) return;
+
+			let index = rawText.indexOf(textToFind);
+			while (index !== -1) {
+				const overlaps = matches.some(m => 
+					(index >= m.start && index < m.end) || 
+					(index + textToFind.length > m.start && index + textToFind.length <= m.end) ||
+					(m.start >= index && m.start < index + textToFind.length)
+				);
+
+				if (!overlaps) {
+					matches.push({
+						start: index,
+						end: index + textToFind.length,
+						clause
+					});
+				}
+
+				index = rawText.indexOf(textToFind, index + 1);
+			}
+		});
+
+		matches.sort((a, b) => a.start - b.start);
+
+		let result = '';
+		let currentIndex = 0;
+
+		matches.forEach((match) => {
+			if (match.start > currentIndex) {
+				result += escapeHtml(rawText.slice(currentIndex, match.start));
+			}
+
+			const isHovered = hoveredClauseId === match.clause.id;
+			const isSelected = selectedClauseId === match.clause.id;
+			const activeClass = (isHovered || isSelected) ? 'active-highlight' : '';
+			const riskClass = `risk-${match.clause.risk_level.toLowerCase()}`;
+			
+			const badgePrefixMap: Record<string, string> = {
+				'LIMITATION OF LIABILITY': 'LOB',
+				'INDEMNIFICATION': 'IND',
+				'TERMINATION': 'TRM',
+				'INTELLECTUAL PROPERTY': 'IP',
+				'CONFIDENTIALITY': 'CON',
+				'WARRANTY': 'WRN',
+				'GOVERNING LAW': 'GOV',
+				'LIQUIDATED DAMAGES': 'LIQ',
+				'FORCE MAJEURE': 'FOR',
+				'PAYMENT': 'PAY'
+			};
+			const cleanType = match.clause.clause_type.toUpperCase().trim();
+			let badgeText = badgePrefixMap[cleanType] || cleanType.slice(0, 3);
+
+			result += `<span class="clause-highlight ${riskClass} ${activeClass}" data-clause-id="${match.clause.id}" id="highlight-${match.clause.id}"><span class="highlight-badge">${escapeHtml(badgeText)}</span>${escapeHtml(match.clause.text_content)}</span>`;
+
+			currentIndex = match.end;
+		});
+
+		if (currentIndex < rawText.length) {
+			result += escapeHtml(rawText.slice(currentIndex));
+		}
+
+		return result;
+	});
+
+	function handleDocumentClick(e: MouseEvent) {
+		const target = e.target as HTMLElement;
+		const highlightSpan = target.closest('.clause-highlight');
+		if (highlightSpan) {
+			const clauseId = highlightSpan.getAttribute('data-clause-id');
+			if (clauseId) {
+				selectedClauseId = clauseId;
+				activeTab = 'clauses';
+				
+				expandedClauses = {
+					...expandedClauses,
+					[clauseId]: true
+				};
+
+				setTimeout(() => {
+					const cardEl = document.getElementById(`clause-card-${clauseId}`);
+					if (cardEl) {
+						cardEl.scrollIntoView({ behavior: 'smooth', block: 'center' });
+					}
+				}, 100);
+			}
+		}
+	}
+
+	function handleDocumentMouseOver(e: MouseEvent) {
+		const target = e.target as HTMLElement;
+		const highlightSpan = target.closest('.clause-highlight');
+		if (highlightSpan) {
+			hoveredClauseId = highlightSpan.getAttribute('data-clause-id');
+		} else {
+			hoveredClauseId = null;
+		}
+	}
+
+	function handleDocumentMouseOut(e: MouseEvent) {
+		hoveredClauseId = null;
+	}
+
+	function handleClauseCardClick(clauseId: string) {
+		selectedClauseId = clauseId;
+		toggleClauseExpand(clauseId);
+		syncScrollToHighlight(clauseId);
+	}
+
+	function syncScrollToHighlight(clauseId: string) {
+		setTimeout(() => {
+			const highlightEl = document.getElementById(`highlight-${clauseId}`);
+			if (highlightEl) {
+				highlightEl.scrollIntoView({ behavior: 'smooth', block: 'center' });
+			}
+		}, 80);
+	}
 
 	// Reactively initialize live processing trace steps
 	$effect(() => {
@@ -331,10 +476,12 @@
 				</div>
 			</div>
 			
-			<div class="document-body">
-				<div class="document-paper">
+			<div class="document-body" id="document-body-container">
+				<!-- svelte-ignore a11y_click_events_have_key_events -->
+				<!-- svelte-ignore a11y_no_static_element_interactions -->
+				<div class="document-paper" onclick={handleDocumentClick} onmouseover={handleDocumentMouseOver} onmouseout={handleDocumentMouseOut}>
 					{#if contract.metadata_json?.raw_text}
-						{contract.metadata_json.raw_text}
+						{@html highlightedHtml}
 					{:else if contract.status === 'PROCESSING'}
 						<div class="document-placeholder">
 							<span class="spinner spinner-md"></span>
@@ -383,11 +530,11 @@
 						<div class="overview-section">
 							<h3 class="subsection-title">Executive Summary</h3>
 							<div class="metadata-grid">
-								<div class="meta-card bg-panel-glow">
+								<div class="meta-card bg-panel-glow" use:premiumCard>
 									<span class="mc-label">Filename</span>
 									<span class="mc-value truncate" title={contract.filename}>{contract.filename}</span>
 								</div>
-								<div class="meta-card bg-panel-glow">
+								<div class="meta-card bg-panel-glow" use:premiumCard>
 									<span class="mc-label">Analysis Status</span>
 									<div class="flex-row gap-6">
 										{#if contract.status === 'COMPLETED'}
@@ -403,11 +550,11 @@
 										{/if}
 									</div>
 								</div>
-								<div class="meta-card bg-panel-glow">
+								<div class="meta-card bg-panel-glow" use:premiumCard>
 									<span class="mc-label">Uploaded</span>
 									<span class="mc-value">{timeAgo(contract.created_at)}</span>
 								</div>
-								<div class="meta-card bg-panel-glow">
+								<div class="meta-card bg-panel-glow" use:premiumCard>
 									<span class="mc-label">Risk Rating</span>
 									{#if contract.status === 'COMPLETED' && contract.overall_risk}
 										<div class="flex-row gap-8">
@@ -425,19 +572,19 @@
 							<div class="overview-section">
 								<h3 class="subsection-title">Risk Severity Matrix</h3>
 								<div class="risk-matrix">
-									<div class="matrix-item bg-critical-glow">
+									<div class="matrix-item bg-critical-glow" use:premiumCard={{ color: 'var(--color-critical)' }}>
 										<span class="matrix-count text-critical">{contract.metadata_json?.risk_counts?.CRITICAL || 0}</span>
 										<span class="matrix-label">Critical</span>
 									</div>
-									<div class="matrix-item bg-high-glow">
+									<div class="matrix-item bg-high-glow" use:premiumCard={{ color: 'var(--color-high)' }}>
 										<span class="matrix-count text-high">{contract.metadata_json?.risk_counts?.HIGH || 0}</span>
 										<span class="matrix-label">High</span>
 									</div>
-									<div class="matrix-item bg-medium-glow">
+									<div class="matrix-item bg-medium-glow" use:premiumCard={{ color: 'var(--color-medium)' }}>
 										<span class="matrix-count text-medium">{contract.metadata_json?.risk_counts?.MEDIUM || 0}</span>
 										<span class="matrix-label">Medium</span>
 									</div>
-									<div class="matrix-item bg-low-glow">
+									<div class="matrix-item bg-low-glow" use:premiumCard={{ color: 'var(--color-low)' }}>
 										<span class="matrix-count text-low">{contract.metadata_json?.risk_counts?.LOW || 0}</span>
 										<span class="matrix-label">Low</span>
 									</div>
@@ -517,7 +664,7 @@
 						{:else}
 							<div class="risks-list">
 								{#each contract.metadata_json.top_risks as r}
-									<div class="risk-glow-card risk-{(r.risk_level || 'LOW').toLowerCase()}">
+									<div class="risk-glow-card risk-{(r.risk_level || 'LOW').toLowerCase()}" use:premiumCard={{ color: 'var(--color-' + (r.risk_level || 'LOW').toLowerCase() + ')' }}>
 										<div class="risk-glow-header">
 											<span class="risk-glow-type">{r.clause_type || 'Clause'}</span>
 											<span class="badge badge-{r.risk_level === 'CRITICAL' || r.risk_level === 'HIGH' ? 'danger' : r.risk_level === 'MEDIUM' ? 'warning' : 'success'}">{r.risk_level}</span>
@@ -603,7 +750,14 @@
 									{@const isExpanded = expandedClauses[clause.id]}
 									<!-- svelte-ignore a11y_click_events_have_key_events -->
 									<!-- svelte-ignore a11y_no_static_element_interactions -->
-									<div class="clause-interactive-card risk-{clause.risk_level.toLowerCase()} {isExpanded ? 'expanded' : ''}" onclick={() => toggleClauseExpand(clause.id)}>
+									<div 
+										id="clause-card-{clause.id}"
+										class="clause-interactive-card risk-{clause.risk_level.toLowerCase()} {isExpanded ? 'expanded' : ''} {selectedClauseId === clause.id || hoveredClauseId === clause.id ? 'active-card' : ''}" 
+										use:premiumCard={{ color: 'var(--color-' + clause.risk_level.toLowerCase() + ')' }}
+										onmouseenter={() => { hoveredClauseId = clause.id; }}
+										onmouseleave={() => { if (hoveredClauseId === clause.id) hoveredClauseId = null; }}
+										onclick={() => handleClauseCardClick(clause.id)}
+									>
 										<div class="clause-interactive-header">
 											<div class="flex-row gap-8">
 												<svg class="chevron-icon" class:rotated={isExpanded} width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="9 18 15 12 9 6"/></svg>
@@ -763,7 +917,7 @@
 		align-items: center;
 		justify-content: space-between;
 		padding: 16px 24px;
-		background: #111112;
+		background: var(--bg-sidebar);
 		border-bottom: 1px solid var(--border-subtle);
 		height: 68px;
 		flex-shrink: 0;
@@ -830,7 +984,7 @@
 		border-right: 1px solid var(--border-subtle);
 		height: 100%;
 		overflow: hidden;
-		background: #080809;
+		background: var(--bg-app);
 	}
 
 	.pane-header {
@@ -838,7 +992,7 @@
 		align-items: center;
 		justify-content: space-between;
 		padding: 16px 20px;
-		background: #111112;
+		background: var(--bg-sidebar);
 		border-bottom: 1px solid var(--border-subtle);
 		height: 48px;
 		flex-shrink: 0;
@@ -861,23 +1015,23 @@
 		padding: 24px;
 		display: flex;
 		justify-content: center;
-		background: #070708;
+		background: var(--bg-app);
 	}
 
 	.document-paper {
 		width: 100%;
 		max-width: 800px;
-		background: rgba(21, 21, 23, 0.85);
+		background: var(--bg-panel);
 		border: 1px solid var(--border-subtle);
 		border-radius: 8px;
 		padding: 32px;
 		font-family: 'JetBrains Mono', 'SF Mono', Consolas, monospace;
 		font-size: 13px;
 		line-height: 1.7;
-		color: #d1d1d6;
+		color: var(--text-primary);
 		white-space: pre-wrap;
 		word-break: break-word;
-		box-shadow: 0 4px 20px rgba(0,0,0,0.5);
+		box-shadow: var(--shadow-premium);
 		height: fit-content;
 		min-height: 100%;
 	}
@@ -905,7 +1059,7 @@
 	.analysis-tabs {
 		display: flex;
 		padding: 8px 16px;
-		background: #111112;
+		background: var(--bg-sidebar);
 		border-bottom: 1px solid var(--border-subtle);
 		gap: 6px;
 		height: 48px;
@@ -1005,7 +1159,7 @@
 	}
 
 	.bg-panel-glow {
-		background: rgba(26, 26, 28, 0.4);
+		background: var(--bg-panel);
 		transition: border-color 150ms ease;
 	}
 	.bg-panel-glow:hover {
@@ -1061,10 +1215,10 @@
 	}
 
 	/* Risk glowing ambient tokens */
-	.bg-critical-glow { background: rgba(255, 59, 48, 0.03); border-color: rgba(255, 59, 48, 0.15); }
-	.bg-high-glow { background: rgba(248, 81, 73, 0.03); border-color: rgba(248, 81, 73, 0.15); }
-	.bg-medium-glow { background: rgba(210, 153, 34, 0.02); border-color: rgba(210, 153, 34, 0.12); }
-	.bg-low-glow { background: rgba(63, 185, 80, 0.02); border-color: rgba(63, 185, 80, 0.12); }
+	.bg-critical-glow { background: var(--glow-critical); border-color: var(--glow-critical-border); }
+	.bg-high-glow { background: var(--glow-high); border-color: var(--glow-high-border); }
+	.bg-medium-glow { background: var(--glow-medium); border-color: var(--glow-medium-border); }
+	.bg-low-glow { background: var(--glow-low); border-color: var(--glow-low-border); }
 
 	.text-critical { color: #ff3b30; }
 	.text-high { color: #f85149; }
@@ -1134,7 +1288,7 @@
 	.risk-glow-excerpt {
 		font-family: monospace;
 		font-size: 12px;
-		background: rgba(0,0,0,0.2);
+		background: var(--bg-hover);
 		padding: 10px 12px;
 		border-radius: 6px;
 		border: 1px solid var(--border-subtle);
@@ -1206,7 +1360,7 @@
 	.clause-search-bar {
 		width: 100%;
 		padding: 8px 12px 8px 34px;
-		background: rgba(0, 0, 0, 0.2);
+		background: var(--bg-hover);
 		border: 1px solid var(--border-subtle);
 		border-radius: 6px;
 		color: var(--text-primary);
@@ -1348,14 +1502,14 @@
 	.clause-redline {
 		border: 1px solid var(--border-subtle);
 		border-radius: 6px;
-		background: #0d0d0f;
+		background: var(--bg-hover);
 		overflow: hidden;
 	}
 
 	.clause-redline-head {
 		padding: 8px 12px;
 		border-bottom: 1px solid var(--border-subtle);
-		background: #141417;
+		background: var(--bg-active);
 		font-size: 12px;
 		color: var(--text-secondary);
 	}
@@ -1365,7 +1519,7 @@
 		font-family: 'JetBrains Mono', 'SF Mono', Consolas, monospace;
 		font-size: 12px;
 		line-height: 1.6;
-		color: #a7f3d0;
+		color: var(--color-low);
 		white-space: pre-wrap;
 		word-break: break-all;
 		margin: 0;
@@ -1615,5 +1769,10 @@
 	.modal-footer {
 		display: flex;
 		gap: 8px;
+	}
+
+	.clause-interactive-card.active-card {
+		border-color: var(--accent-primary) !important;
+		box-shadow: 0 4px 16px var(--glow-low);
 	}
 </style>

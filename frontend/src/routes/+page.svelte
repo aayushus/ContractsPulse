@@ -3,7 +3,7 @@
 	import { goto } from '$app/navigation';
 	import { toast } from '$lib/toastStore';
 	import { apiFetch } from '$lib/api';
-	import { glow } from '$lib/actions';
+	import { premiumCard } from '$lib/actions';
 
 	type ContractSummary = {
 		id: string;
@@ -262,19 +262,19 @@
 
 <div class="page-content">
 	<div class="metric-row">
-		<div class="metric-card panel" use:glow>
+		<div class="metric-card panel" use:premiumCard>
 			<div class="metric-label">Active Contracts</div>
 			<div class="metric-value">{contracts.length}</div>
 		</div>
-		<div class="metric-card panel" use:glow>
+		<div class="metric-card panel" use:premiumCard={{ color: 'var(--color-critical)' }}>
 			<div class="metric-label">High Risk Clauses</div>
 			<div class="metric-value text-danger">{contracts.filter(c => c.overall_risk === 'HIGH' || c.overall_risk === 'CRITICAL').length}</div>
 		</div>
-		<div class="metric-card panel" use:glow>
+		<div class="metric-card panel" use:premiumCard={{ color: 'var(--color-medium)' }}>
 			<div class="metric-label">Expiring &lt; 30 Days</div>
 			<div class="metric-value text-warning">--</div>
 		</div>
-		<div class="metric-card panel" use:glow>
+		<div class="metric-card panel" use:premiumCard={{ color: 'var(--accent-primary)' }}>
 			<div class="metric-label">In Negotiation</div>
 			<div class="metric-value">--</div>
 		</div>
@@ -297,10 +297,10 @@
 			</div>
 		{/if}
 
-		{#each contracts as contract}
+		{#each contracts as contract, i}
 			<!-- svelte-ignore a11y_click_events_have_key_events -->
 			<!-- svelte-ignore a11y_no_static_element_interactions -->
-			<div class="table-row clickable-row" onclick={(e: MouseEvent) => {
+			<div class="table-row clickable-row stagger-entry" style="--index: {i}" onclick={(e: MouseEvent) => {
 				// Don't navigate if they clicked the reprocess or delete button
 				const target = e.target as HTMLElement | null;
 				if (!target || !target.closest('.btn-icon')) {

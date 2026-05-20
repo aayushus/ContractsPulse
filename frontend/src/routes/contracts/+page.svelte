@@ -3,7 +3,7 @@
 	import { goto } from '$app/navigation';
 	import { apiFetch } from '$lib/api';
 	import { toast } from '$lib/toastStore';
-	import { glow } from '$lib/actions';
+	import { premiumCard } from '$lib/actions';
 
 	type ContractSummary = {
 		id: string;
@@ -271,19 +271,19 @@
 <div class="page-content">
 	<!-- Glassmorphic Portfolio Metrics Grid -->
 	<div class="metric-row">
-		<div class="metric-card panel bg-glass-card" use:glow>
+		<div class="metric-card panel bg-glass-card" use:premiumCard>
 			<div class="metric-label">Total Documents</div>
 			<div class="metric-value text-primary">{totalCount}</div>
 		</div>
-		<div class="metric-card panel bg-glass-card" use:glow>
+		<div class="metric-card panel bg-glass-card" use:premiumCard={{ color: 'var(--color-medium)' }}>
 			<div class="metric-label">Processing Queue</div>
 			<div class="metric-value" class:text-warning={queueCount > 0} class:text-tertiary={queueCount === 0}>{queueCount}</div>
 		</div>
-		<div class="metric-card panel bg-glass-card" use:glow>
+		<div class="metric-card panel bg-glass-card" use:premiumCard={{ color: 'var(--color-critical)' }}>
 			<div class="metric-label">Vulnerability Rate</div>
 			<div class="metric-value" class:text-danger={riskyCount > 0} class:text-primary={riskyCount === 0}>{riskyRate}</div>
 		</div>
-		<div class="metric-card panel bg-glass-card" use:glow>
+		<div class="metric-card panel bg-glass-card" use:premiumCard={{ color: 'var(--accent-primary)' }}>
 			<div class="metric-label">Obligations Analyzed</div>
 			<div class="metric-value text-secondary">{totalObligationsCount}</div>
 		</div>
@@ -348,10 +348,10 @@
 			</div>
 		{/if}
 
-		{#each filteredContracts as contract}
+		{#each filteredContracts as contract, i}
 			<!-- svelte-ignore a11y_click_events_have_key_events -->
 			<!-- svelte-ignore a11y_no_static_element_interactions -->
-			<div class="table-row clickable-row" onclick={(e: MouseEvent) => {
+			<div class="table-row clickable-row stagger-entry" style="--index: {i}" onclick={(e: MouseEvent) => {
 				const target = e.target as HTMLElement | null;
 				if (!target || !target.closest('.btn-icon') && !target.closest('.btn-inline')) {
 					goto(`/contracts/${contract.id}`);
@@ -486,7 +486,7 @@
 	.page-header {
 		padding: 32px 40px 24px;
 		border-bottom: 1px solid var(--border-subtle);
-		background: #111112;
+		background: var(--bg-sidebar);
 	}
 
 	.breadcrumbs {
@@ -554,8 +554,8 @@
 
 	.metric-card:hover {
 		transform: translateY(-2px);
-		border-color: rgba(255, 255, 255, 0.15);
-		box-shadow: 0 8px 30px rgba(0, 0, 0, 0.3);
+		border-color: var(--border-glass-hover);
+		box-shadow: var(--shadow-premium);
 	}
 
 	.metric-card:active {
@@ -580,7 +580,7 @@
 	/* Filter panel */
 	.filters-panel {
 		padding: 16px 20px;
-		background: #171719;
+		background: var(--bg-panel);
 		border: 1px solid var(--border-subtle);
 		margin-bottom: 24px;
 	}

@@ -3,7 +3,7 @@
 	import { goto } from '$app/navigation';
 	import { apiFetch } from '$lib/api';
 	import { toast } from '$lib/toastStore';
-	import { glow } from '$lib/actions';
+	import { premiumCard } from '$lib/actions';
 
 	type RiskItem = {
 		id: string;
@@ -26,6 +26,10 @@
 	let severityFilter = $state('ALL'); // 'ALL' | 'CRITICAL' | 'HIGH'
 	let clauseTypeFilter = $state('ALL');
 	let contractFilter = $state('ALL');
+
+	// UI Dropdown States
+	let isClauseDropdownOpen = $state(false);
+	let isContractDropdownOpen = $state(false);
 
 	// UI Expanded drawers
 	let expandedRedlines = $state<Record<string, boolean>>({});
@@ -117,6 +121,21 @@
 		return `${days}d ago`;
 	}
 
+	// Svelte custom action for clicking outside dropdown menus
+	function clickOutside(node: HTMLElement, callback: () => void) {
+		const handleClick = (event: MouseEvent) => {
+			if (node && !node.contains(event.target as Node) && !event.defaultPrevented) {
+				callback();
+			}
+		};
+		document.addEventListener('click', handleClick);
+		return {
+			destroy() {
+				document.removeEventListener('click', handleClick);
+			}
+		};
+	}
+
 	onMount(() => {
 		fetchRisks();
 		pollInterval = setInterval(() => fetchRisks(true), 3000);
@@ -142,30 +161,29 @@
 </header>
 
 <div class="page-content">
-	<!-- Workspace Overview Metrics Grid -->
 	<div class="metric-row">
-		<div class="metric-card panel bg-glass-card" use:glow>
+		<div class="metric-card panel bg-glass-card" use:premiumCard={{ color: 'var(--color-critical)' }}>
 			<div class="metric-header flex-between">
 				<span class="metric-label">Critical Vulnerabilities</span>
 				<span class="m-dot m-dot-critical"></span>
 			</div>
 			<div class="metric-value text-critical font-bold">{criticalCount}</div>
 		</div>
-		<div class="metric-card panel bg-glass-card" use:glow>
+		<div class="metric-card panel bg-glass-card" use:premiumCard={{ color: 'var(--color-high)' }}>
 			<div class="metric-header flex-between">
 				<span class="metric-label">High-Risk Clauses</span>
 				<span class="m-dot m-dot-high"></span>
 			</div>
 			<div class="metric-value text-high font-bold">{highCount}</div>
 		</div>
-		<div class="metric-card panel bg-glass-card" use:glow>
+		<div class="metric-card panel bg-glass-card" use:premiumCard>
 			<div class="metric-header flex-between">
 				<span class="metric-label">Affected Documents</span>
 				<span class="m-dot m-dot-neutral"></span>
 			</div>
 			<div class="metric-value text-primary">{affectedDocsCount}</div>
 		</div>
-		<div class="metric-card panel bg-glass-card" use:glow>
+		<div class="metric-card panel bg-glass-card" use:premiumCard={{ color: 'var(--text-secondary)' }}>
 			<div class="metric-header flex-between">
 				<span class="metric-label">Average Risks/Document</span>
 				<span class="m-dot m-dot-neutral"></span>
@@ -188,35 +206,84 @@
 			</div>
 
 			<div class="severity-pills flex-row gap-6">
-				<button class="filter-pill" class:active={severityFilter === 'ALL'} onclick={() => severityFilter = 'ALL'}>
+				<button type="button" class="filter-pill" class:active={severityFilter === 'ALL'} onclick={() => severityFilter = 'ALL'}>
 					All Severe ({totalRisksCount})
 				</button>
-				<button class="filter-pill filter-pill-critical" class:active={severityFilter === 'CRITICAL'} onclick={() => severityFilter = 'CRITICAL'}>
+				<button type="button" class="filter-pill filter-pill-critical" class:active={severityFilter === 'CRITICAL'} onclick={() => severityFilter = 'CRITICAL'}>
 					Critical ({criticalCount})
 				</button>
-				<button class="filter-pill filter-pill-high" class:active={severityFilter === 'HIGH'} onclick={() => severityFilter = 'HIGH'}>
+				<button type="button" class="filter-pill filter-pill-high" class:active={severityFilter === 'HIGH'} onclick={() => severityFilter = 'HIGH'}>
 					High ({highCount})
 				</button>
 			</div>
 		</div>
 
 		<div class="dropdown-filters-row flex-row gap-16">
+			<!-- Custom Clause Type Dropdown Selector -->
 			<div class="select-wrapper flex-row gap-8">
 				<span class="select-label">Clause Type:</span>
-				<select bind:value={clauseTypeFilter} class="select-dropdown">
-					{#each uniqueClauseTypes as type}
-						<option value={type}>{type === 'ALL' ? 'All Types' : type}</option>
-					{/each}
-				</select>
+				<div class="custom-select-container">
+					<button 
+						type="button"
+						class="custom-select-trigger" 
+						class:active={isClauseDropdownOpen}
+						onclick={(e) => { e.stopPropagation(); isClauseDropdownOpen = !isClauseDropdownOpen; isContractDropdownOpen = false; }}
+					>
+						<span>{clauseTypeFilter === 'ALL' ? 'All Types' : clauseTypeFilter}</span>
+						<svg class="dropdown-arrow-icon" class:rotated={isClauseDropdownOpen} width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polyline points="6 9 12 15 18 9"/></svg>
+					</button>
+					{#if isClauseDropdownOpen}
+						<div class="custom-select-popover" use:clickOutside={() => isClauseDropdownOpen = false}>
+							{#each uniqueClauseTypes as type}
+								<button 
+									type="button"
+									class="dropdown-item" 
+									class:selected={clauseTypeFilter === type} 
+									onclick={() => { clauseTypeFilter = type; isClauseDropdownOpen = false; }}
+								>
+									<span>{type === 'ALL' ? 'All Types' : type}</span>
+									{#if clauseTypeFilter === type}
+										<svg class="check-icon" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3"><polyline points="20 6 9 17 4 12"/></svg>
+									{/if}
+								</button>
+							{/each}
+						</div>
+					{/if}
+				</div>
 			</div>
 
+			<!-- Custom Contract Source Dropdown Selector -->
 			<div class="select-wrapper flex-row gap-8">
 				<span class="select-label">Document Source:</span>
-				<select bind:value={contractFilter} class="select-dropdown select-dropdown-wide">
-					{#each uniqueContracts as filename}
-						<option value={filename}>{filename === 'ALL' ? 'All Contracts' : filename}</option>
-					{/each}
-				</select>
+				<div class="custom-select-container">
+					<button 
+						type="button"
+						class="custom-select-trigger" 
+						class:active={isContractDropdownOpen}
+						onclick={(e) => { e.stopPropagation(); isContractDropdownOpen = !isContractDropdownOpen; isClauseDropdownOpen = false; }}
+						style="max-width: 250px;"
+					>
+						<span class="truncate">{contractFilter === 'ALL' ? 'All Contracts' : contractFilter}</span>
+						<svg class="dropdown-arrow-icon" class:rotated={isContractDropdownOpen} width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polyline points="6 9 12 15 18 9"/></svg>
+					</button>
+					{#if isContractDropdownOpen}
+						<div class="custom-select-popover" use:clickOutside={() => isContractDropdownOpen = false} style="min-width: 280px;">
+							{#each uniqueContracts as filename}
+								<button 
+									type="button"
+									class="dropdown-item" 
+									class:selected={contractFilter === filename} 
+									onclick={() => { contractFilter = filename; isContractDropdownOpen = false; }}
+								>
+									<span class="truncate" style="max-width: 230px;" title={filename}>{filename === 'ALL' ? 'All Contracts' : filename}</span>
+									{#if contractFilter === filename}
+										<svg class="check-icon" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3"><polyline points="20 6 9 17 4 12"/></svg>
+									{/if}
+								</button>
+							{/each}
+						</div>
+					{/if}
+				</div>
 			</div>
 		</div>
 	</div>
@@ -235,16 +302,16 @@
 		</div>
 	{:else}
 		<div class="risks-feed">
-			{#each filteredRisks as r (r.id)}
+			{#each filteredRisks as r, i (r.id)}
 				{@const isCritical = r.risk_level === 'CRITICAL'}
 				{@const isExpanded = expandedRedlines[r.id]}
-				<div class="risk-card panel risk-{r.risk_level.toLowerCase()}" class:card-expanded={isExpanded} use:glow={{ color: r.risk_level === 'CRITICAL' ? 'rgba(255, 59, 48, 0.08)' : 'rgba(248, 81, 73, 0.05)' }}>
+				<div class="risk-card panel risk-{r.risk_level.toLowerCase()} stagger-entry" style="--index: {i}" class:card-expanded={isExpanded} use:premiumCard={{ color: r.risk_level === 'CRITICAL' ? 'var(--color-critical)' : 'var(--color-high)' }}>
 					<!-- Header Section -->
 					<div class="risk-card-header flex-between">
 						<div class="risk-origin flex-row gap-8">
 							<span class="origin-label">Document:</span>
 							<button class="doc-chip-btn truncate" onclick={() => goto(`/contracts/${r.contract_id}`)} title="View Contract">
-								<svg class="file-icon" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/></svg>
+								<svg class="paperclip-icon" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21.44 11.05l-9.19 9.19a6 6 0 0 1-8.49-8.49l9.19-9.19a4 4 0 0 1 5.66 5.66l-9.2 9.19a2 2 0 0 1-2.83-2.83l8.49-8.48"/></svg>
 								{r.contract_filename}
 							</button>
 						</div>
@@ -278,16 +345,31 @@
 									<svg class="chevron-icon" class:rotated={isExpanded} width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="9 18 15 12 9 6"/></svg>
 									Suggested Alternative (Redline)
 								</span>
-								{#if isExpanded}
-									<button class="btn btn-secondary btn-compact text-xs" onclick={(e) => { e.stopPropagation(); copyRedline(r); }}>
-										Copy Redline
-									</button>
-								{/if}
+								<button class="btn btn-secondary btn-compact text-xs" style="opacity: {isExpanded ? 1 : 0}; pointer-events: {isExpanded ? 'auto' : 'none'}; transition: opacity 150ms var(--ease-out);" onclick={(e) => { e.stopPropagation(); copyRedline(r); }}>
+									Copy Redline
+								</button>
 							</div>
 
-							{#if isExpanded}
-								<pre class="redline-suggestion-content font-mono">{r.redline_suggestion}</pre>
-							{/if}
+							<div class="redline-drawer-content-wrapper" style="display: grid; grid-template-rows: {isExpanded ? '1fr' : '0fr'}; transition: grid-template-rows 250ms var(--ease-out);">
+								<div style="overflow: hidden;">
+									<div class="diff-comparison-pane">
+										<div class="diff-column diff-column-original">
+											<div class="diff-header font-semibold text-xs text-secondary flex-between">
+												<span>Current Clause Language</span>
+												<span class="diff-badge diff-badge-removed">Original</span>
+											</div>
+											<div class="diff-content font-mono">{r.text_content}</div>
+										</div>
+										<div class="diff-column diff-column-suggested">
+											<div class="diff-header font-semibold text-xs text-secondary flex-between">
+												<span>AI Recommended Redline</span>
+												<span class="diff-badge diff-badge-added">Suggested</span>
+											</div>
+											<div class="diff-content font-mono">{r.redline_suggestion}</div>
+										</div>
+									</div>
+								</div>
+							</div>
 						</div>
 					{/if}
 
@@ -315,7 +397,7 @@
 	.page-header {
 		padding: 32px 40px 24px;
 		border-bottom: 1px solid var(--border-subtle);
-		background: #111112;
+		background: var(--bg-sidebar);
 	}
 
 	.breadcrumbs {
@@ -401,7 +483,7 @@
 		flex-direction: column;
 		gap: 16px;
 		margin-bottom: 24px;
-		background: #171719;
+		background: var(--bg-panel);
 		border: 1px solid var(--border-subtle);
 	}
 
@@ -553,8 +635,15 @@
 	}
 
 	.risk-card {
-		padding: 24px;
-		background: var(--bg-panel);
+		padding: 24px 24px 24px 28px; /* Extra left padding for organic capsule lightbar */
+		background: var(--bg-glass-card);
+		backdrop-filter: blur(12px);
+		border: 1px solid var(--border-glass);
+		border-radius: 14px;
+		box-shadow: 
+			0 1px 2px rgba(0, 0, 0, 0.01),
+			0 10px 30px rgba(0, 0, 0, 0.03),
+			inset 0 1px 0 rgba(255, 255, 255, 0.6);
 		transition: border-color 220ms var(--ease-spring-gentle), 
 		            transform 200ms var(--ease-spring-gentle), 
 		            box-shadow 220ms var(--ease-spring-gentle);
@@ -562,45 +651,64 @@
 		overflow: hidden;
 	}
 
+	[data-theme="dark"] .risk-card {
+		box-shadow: 
+			0 1px 2px rgba(0, 0, 0, 0.15),
+			0 16px 40px rgba(0, 0, 0, 0.35),
+			inset 0 1px 0 rgba(255, 255, 255, 0.06);
+		background: var(--bg-glass-card);
+		border-color: var(--border-glass);
+	}
+
 	.risk-card:hover {
-		transform: translateY(-2px);
+		transform: translateY(-3px);
 	}
 
 	.risk-card:active {
-		transform: translateY(-1px) scale(0.99);
+		transform: translateY(-1px) scale(0.98);
 	}
 
+	/* Organic capsule vertical status bars */
 	.risk-card::before {
 		content: '';
 		position: absolute;
-		left: 0;
-		top: 0;
-		bottom: 0;
+		left: 10px;
+		top: 24px;
+		bottom: 24px;
 		width: 4px;
-		transition: background 150ms ease;
+		border-radius: 99px;
+		transition: background 180ms ease, box-shadow 180ms ease;
 	}
 
-	/* Risk Ambient Glow Borders */
+	/* Severity Specific Ambient Back-glow & Outlines */
 	.risk-critical {
 		border-color: var(--glow-critical-border);
 	}
 	.risk-critical::before {
-		background: var(--color-critical);
+		background: linear-gradient(180deg, var(--color-critical) 0%, rgba(217, 56, 58, 0.5) 100%);
+		box-shadow: 0 0 10px rgba(217, 56, 58, 0.4);
 	}
 	.risk-critical:hover {
-		border-color: rgba(255, 59, 48, 0.4);
-		box-shadow: 0 4px 20px rgba(255, 59, 48, 0.05);
+		border-color: rgba(217, 56, 58, 0.35);
+		box-shadow: 0 12px 36px rgba(217, 56, 58, 0.06), inset 0 1px 0 rgba(255, 255, 255, 0.6);
+	}
+	[data-theme="dark"] .risk-critical:hover {
+		box-shadow: 0 16px 40px rgba(0, 0, 0, 0.35), 0 0 20px rgba(217, 56, 58, 0.08), inset 0 1px 0 rgba(255, 255, 255, 0.06);
 	}
 
 	.risk-high {
 		border-color: var(--glow-high-border);
 	}
 	.risk-high::before {
-		background: var(--color-high);
+		background: linear-gradient(180deg, var(--color-high) 0%, rgba(207, 34, 46, 0.5) 100%);
+		box-shadow: 0 0 10px rgba(207, 34, 46, 0.3);
 	}
 	.risk-high:hover {
-		border-color: rgba(248, 81, 73, 0.35);
-		box-shadow: 0 4px 20px rgba(248, 81, 73, 0.04);
+		border-color: rgba(207, 34, 46, 0.3);
+		box-shadow: 0 12px 36px rgba(207, 34, 46, 0.05), inset 0 1px 0 rgba(255, 255, 255, 0.6);
+	}
+	[data-theme="dark"] .risk-high:hover {
+		box-shadow: 0 16px 40px rgba(0, 0, 0, 0.35), 0 0 20px rgba(207, 34, 46, 0.06), inset 0 1px 0 rgba(255, 255, 255, 0.06);
 	}
 
 	.risk-card-header {
@@ -611,15 +719,17 @@
 
 	.origin-label {
 		font-size: 12px;
+		font-weight: 500;
 		color: var(--text-tertiary);
 	}
 
+	/* High-fidelity paper-clip doc chip */
 	.doc-chip-btn {
 		background: var(--bg-hover);
 		border: 1px solid var(--border-subtle);
 		color: var(--text-primary);
-		padding: 4px 10px;
-		border-radius: 4px;
+		padding: 4px 12px;
+		border-radius: 6px;
 		font-size: 12px;
 		font-weight: 500;
 		cursor: pointer;
@@ -627,25 +737,29 @@
 		align-items: center;
 		gap: 6px;
 		max-width: 250px;
-		transition: transform 100ms var(--ease-out), background 150ms ease;
+		transition: transform 120ms var(--ease-out), background 150ms ease, border-color 150ms ease, box-shadow 150ms ease;
+		box-shadow: 0 1px 2px rgba(0, 0, 0, 0.01);
+	}
+
+	.doc-chip-btn:hover {
+		background: var(--bg-active);
+		border-color: var(--border-strong);
+		box-shadow: 0 2px 6px rgba(0, 0, 0, 0.02);
 	}
 
 	.doc-chip-btn:active {
 		transform: scale(0.97);
 	}
 
-	.doc-chip-btn:hover {
-		background: var(--bg-active);
-		border-color: var(--border-strong);
-	}
-
 	.clause-type-badge {
 		font-size: 11px;
-		background: rgba(255, 255, 255, 0.04);
+		font-weight: 600;
+		background: var(--bg-hover);
 		color: var(--text-secondary);
 		border: 1px solid var(--border-subtle);
 		padding: 2px 8px;
 		border-radius: 4px;
+		letter-spacing: 0.5px;
 	}
 
 	.risk-card-body {
@@ -653,43 +767,40 @@
 	}
 
 	.risk-reasoning {
-		font-size: 13px;
+		font-size: 13.5px;
+		font-weight: 500;
 		color: var(--text-primary);
 		line-height: 1.5;
 		margin-bottom: 14px;
 	}
 
-	.clause-text-block {
-		background: #111112;
-		border: 1px solid var(--border-subtle);
-		border-radius: 6px;
-		padding: 14px 18px;
-		color: #a9a9b3;
-		font-size: 12px;
-		line-height: 1.6;
-		max-height: 180px;
-		overflow-y: auto;
-		white-space: pre-wrap;
+	.risk-reasoning strong {
+		font-weight: 600;
+		color: var(--text-secondary);
 	}
 
-	/* Redline Drawer */
+	/* ------------------------------------------------------------
+	   Sleek Comparative Suggested Redline Drawer
+	   ------------------------------------------------------------- */
 	.redline-drawer {
-		background: rgba(255, 255, 255, 0.02);
+		background: rgba(94, 106, 210, 0.015);
 		border: 1px solid var(--border-subtle);
-		border-radius: 6px;
+		border-radius: 8px;
 		margin-bottom: 20px;
 		overflow: hidden;
-		transition: all 200ms var(--ease-out);
+		transition: border-color 220ms ease, background 220ms ease, box-shadow 220ms ease;
 	}
 
 	.redline-drawer.open {
-		border-color: var(--border-strong);
-		background: rgba(255, 255, 255, 0.03);
+		border-color: rgba(94, 106, 210, 0.25);
+		background: rgba(94, 106, 210, 0.04);
+		box-shadow: inset 0 1px 2px rgba(94, 106, 210, 0.02), 0 2px 10px rgba(94, 106, 210, 0.01);
 	}
 
 	.redline-toggle {
-		padding: 10px 14px;
-		font-size: 12px;
+		padding: 12px 16px;
+		font-size: 12.5px;
+		font-weight: 600;
 		cursor: pointer;
 		user-select: none;
 		color: var(--text-secondary);
@@ -702,21 +813,128 @@
 
 	.chevron-icon {
 		transition: transform 200ms var(--ease-out);
+		color: var(--text-tertiary);
 	}
 
 	.chevron-icon.rotated {
 		transform: rotate(90deg);
+		color: var(--text-primary);
 	}
 
-	.redline-suggestion-content {
-		padding: 0 14px 14px;
-		margin: 0;
-		font-size: 12px;
-		line-height: 1.6;
-		color: #3fb950;
+	.diff-comparison-pane {
+		display: grid;
+		grid-template-columns: 1fr 1fr;
+		gap: 16px;
+		padding: 0 16px 16px;
 		background: transparent;
+	}
+
+	@media (max-width: 768px) {
+		.diff-comparison-pane {
+			grid-template-columns: 1fr;
+			gap: 12px;
+		}
+	}
+
+	.diff-column {
+		border-radius: 8px;
+		overflow: hidden;
+		border: 1px solid var(--border-subtle);
+		display: flex;
+		flex-direction: column;
+		background: var(--bg-sidebar);
+	}
+
+	.diff-column-original {
+		background: rgba(217, 56, 58, 0.015);
+		border-color: rgba(217, 56, 58, 0.12);
+	}
+
+	[data-theme="dark"] .diff-column-original {
+		background: rgba(255, 59, 48, 0.015);
+		border-color: rgba(255, 59, 48, 0.15);
+	}
+
+	.diff-column-suggested {
+		background: rgba(46, 160, 67, 0.015);
+		border-color: rgba(46, 160, 67, 0.12);
+	}
+
+	[data-theme="dark"] .diff-column-suggested {
+		background: rgba(63, 185, 80, 0.015);
+		border-color: rgba(63, 185, 80, 0.15);
+	}
+
+	.diff-header {
+		padding: 10px 12px;
+		border-bottom: 1px solid var(--border-subtle);
+		font-size: 11px;
+		font-weight: 600;
+		text-transform: uppercase;
+		letter-spacing: 0.5px;
+		display: flex;
+		align-items: center;
+		justify-content: space-between;
+		background: rgba(0, 0, 0, 0.01);
+	}
+
+	.diff-column-original .diff-header {
+		border-bottom-color: rgba(217, 56, 58, 0.08);
+		color: var(--color-critical);
+	}
+
+	.diff-column-suggested .diff-header {
+		border-bottom-color: rgba(46, 160, 67, 0.08);
+		color: var(--color-low);
+	}
+
+	.diff-content {
+		padding: 12px;
+		font-family: 'JetBrains Mono', 'Fira Code', monospace;
+		font-size: 12.5px;
+		line-height: 1.65;
 		white-space: pre-wrap;
-		overflow-x: auto;
+		word-break: break-word;
+		flex-grow: 1;
+		max-height: 250px;
+		overflow-y: auto;
+	}
+
+	.diff-column-original .diff-content {
+		color: var(--color-critical);
+		text-shadow: 0 0 1px rgba(217, 56, 58, 0.15);
+	}
+
+	[data-theme="dark"] .diff-column-original .diff-content {
+		text-shadow: 0 0 8px rgba(255, 59, 48, 0.2);
+	}
+
+	.diff-column-suggested .diff-content {
+		color: var(--color-low);
+		text-shadow: 0 0 1px rgba(63, 185, 80, 0.15);
+	}
+
+	[data-theme="dark"] .diff-column-suggested .diff-content {
+		text-shadow: 0 0 8px rgba(63, 185, 80, 0.2);
+	}
+
+	.diff-badge {
+		font-size: 9px;
+		font-weight: 700;
+		text-transform: uppercase;
+		padding: 2px 6px;
+		border-radius: 4px;
+		letter-spacing: 0.5px;
+	}
+
+	.diff-badge-removed {
+		background: rgba(217, 56, 58, 0.1);
+		color: var(--color-critical);
+	}
+
+	.diff-badge-added {
+		background: rgba(46, 160, 67, 0.1);
+		color: var(--color-low);
 	}
 
 	/* Footer Action Panel */
@@ -727,12 +945,14 @@
 
 	.uploaded-time {
 		font-size: 11px;
+		font-weight: 500;
 	}
 
 	.btn-compact {
 		height: 28px;
-		padding: 0 10px;
+		padding: 0 12px;
 		font-size: 12px;
+		border-radius: 6px;
 	}
 
 	@media (max-width: 768px) {
