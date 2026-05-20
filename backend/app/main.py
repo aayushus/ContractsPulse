@@ -186,6 +186,7 @@ async def create_contract_from_text(
         user_id=current_user.id,
     )
     db.add(new_contract)
+    db.flush()
     log_contract_event(db, str(new_contract.id), "ingest", "Text submitted for analysis", {"cache": "miss", "mode": "text"})
     db.commit()
     db.refresh(new_contract)
@@ -561,6 +562,7 @@ async def upload_contract(
         user_id=current_user.id
     )
     db.add(new_contract)
+    db.flush()
     log_contract_event(db, str(new_contract.id), "ingest", "PDF uploaded for analysis", {"cache": "miss", "mode": "pdf"})
     db.commit()
     db.refresh(new_contract)
