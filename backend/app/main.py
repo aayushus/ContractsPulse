@@ -21,7 +21,19 @@ from opentelemetry.sdk.resources import Resource
 JWT_SECRET = os.getenv("JWT_SECRET", "super-secret-contractspulse-key-change-it")
 JWT_ALGORITHM = "HS256"
 ACCESS_TOKEN_EXPIRE_MINUTES = 60 * 24 * 7 # 1 week
-DISABLE_SIGNUP = os.getenv("DISABLE_SIGNUP", "false").lower() in ("true", "1", "yes")
+def is_signup_disabled() -> bool:
+    # Read dynamically so docker `.env` changes take effect after container restart,
+    # and so `uvicorn --reload` doesn't accidentally keep stale module-level state.
+    return os.getenv("DISABLE_SIGNUP", "false").lower().strip() in ("true", "1", "yes")
+
+
+def _openai_chat_model() -> str:
+    # Used by direct OpenAI calls in this module (not pydantic-ai Agents).
+    return (os.getenv("OPENAI_MODEL_CHAT") or "gpt-5.4").strip()
+
+
+def _openai_assistant_model() -> str:
+    return (os.getenv("OPENAI_MODEL_ASSISTANT") or _openai_chat_model()).strip()
 
 def get_password_hash(password: str) -> str:
     pwd_bytes = password.encode('utf-8')
@@ -76,9 +88,9 @@ async def health_check():
     return {"status": "ok"}
 
 from .parser import extract_text_from_pdf, extract_contract_metadata, standardized_filename, compute_text_hash
-from .agents import process_contract_text, process_contract_text_fallback, _heuristic_redline, _first_sentence, _heuristic_risk, _enrich_ip_clause
+from .agents import process_contract_text, process_contract_text_fallback, _heuristic_redline, _first_sentence, _heuristic_risk, _enrich_ip_clause, verify_previous_redlines, extract_contract_obligations
 from .database import engine, Base, get_db
-from .models import User, Contract, ContractClause, ContractStatus, RiskLevel, ContractEvent, ClauseFeedback
+from .models import User, Contract, ContractClause, ContractStatus, RiskLevel, ContractEvent, ClauseFeedback, ContractReminder, ReminderType, ReminderStatus, ContractTemplate
 
 def get_current_user(
     authorization: str | None = Header(None),
@@ -137,6 +149,7 @@ def log_contract_event(db: Session, contract_id: str, event_type: str, message: 
 async def create_contract_from_text(
     payload: ContractTextIn,
     background_tasks: BackgroundTasks,
+    parent_id: str | None = None,
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
@@ -150,39 +163,54 @@ async def create_contract_from_text(
     std_name = standardized_filename(meta, upload_date)
     text_hash = compute_text_hash(raw_text)
 
-    existing_contract = db.query(Contract).filter(Contract.file_hash == text_hash, Contract.user_id == current_user.id).first()
-    if existing_contract:
-        # Refresh metadata + filename each submission, but skip re-analysis if already processed.
-        existing = existing_contract.metadata_json or {}
-        existing_contract.filename = std_name
-        existing_contract.metadata_json = {**existing, "raw_text": raw_text, **meta}
+    # Bypass cache if it's a version revision upload
+    existing_contract = None
+    if not parent_id:
+        existing_contract = db.query(Contract).filter(Contract.file_hash == text_hash, Contract.user_id == current_user.id).first()
+        if existing_contract:
+            # Refresh metadata + filename each submission, but skip re-analysis if already processed.
+            existing = existing_contract.metadata_json or {}
+            existing_contract.filename = std_name
+            existing_contract.metadata_json = {**existing, "raw_text": raw_text, **meta}
 
-        if existing_contract.status == ContractStatus.FAILED:
-            existing_contract.status = ContractStatus.PROCESSING
-            log_contract_event(db, str(existing_contract.id), "ingest", "Text re-submitted; retrying failed analysis", {"cache": "hit", "mode": "text"})
+            if existing_contract.status == ContractStatus.FAILED:
+                existing_contract.status = ContractStatus.PROCESSING
+                log_contract_event(db, str(existing_contract.id), "ingest", "Text re-submitted; retrying failed analysis", {"cache": "hit", "mode": "text"})
+                db.commit()
+                background_tasks.add_task(analyze_contract_background, str(existing_contract.id), raw_text)
+                return {
+                    "filename": existing_contract.filename,
+                    "contract_id": str(existing_contract.id),
+                    "status": "PROCESSING",
+                    "message": "Retrying failed contract analysis.",
+                }
+
+            log_contract_event(db, str(existing_contract.id), "ingest", "Text re-submitted; using cached result", {"cache": "hit", "mode": "text", "status": existing_contract.status.value})
             db.commit()
-            background_tasks.add_task(analyze_contract_background, str(existing_contract.id), raw_text)
             return {
                 "filename": existing_contract.filename,
                 "contract_id": str(existing_contract.id),
-                "status": "PROCESSING",
-                "message": "Retrying failed contract analysis.",
+                "status": existing_contract.status.value if existing_contract.status else "COMPLETED",
+                "message": ("Contract already processing." if existing_contract.status == ContractStatus.PROCESSING else "Contract already processed."),
             }
 
-        log_contract_event(db, str(existing_contract.id), "ingest", "Text re-submitted; using cached result", {"cache": "hit", "mode": "text", "status": existing_contract.status.value})
-        db.commit()
-        return {
-            "filename": existing_contract.filename,
-            "contract_id": str(existing_contract.id),
-            "status": existing_contract.status.value if existing_contract.status else "COMPLETED",
-            "message": ("Contract already processing." if existing_contract.status == ContractStatus.PROCESSING else "Contract already processed."),
-        }
+    # Version chaining support
+    metadata = {"raw_text": raw_text, **meta}
+    parent_contract = None
+    version_number = 1
+    if parent_id:
+        parent_contract = db.query(Contract).filter(Contract.id == parent_id, Contract.user_id == current_user.id).first()
+        if parent_contract:
+            parent_version = parent_contract.metadata_json.get("version_number", 1) if parent_contract.metadata_json else 1
+            version_number = parent_version + 1
+            metadata["parent_contract_id"] = parent_id
+            metadata["version_number"] = version_number
 
     new_contract = Contract(
         filename=std_name,
         file_hash=text_hash,
         status=ContractStatus.PROCESSING,
-        metadata_json={"raw_text": raw_text, **meta},
+        metadata_json=metadata,
         user_id=current_user.id,
     )
     db.add(new_contract)
@@ -224,6 +252,12 @@ async def startup_event():
                 "ADD COLUMN IF NOT EXISTS risk_debug_json jsonb DEFAULT '{}'::jsonb;"
             )
         )
+        conn.execute(
+            text(
+                "ALTER TABLE contract_clauses "
+                "ADD COLUMN IF NOT EXISTS embedding vector(1536);"
+            )
+        )
     # Ensure contracts has user_id
     with engine.begin() as conn:
         conn.execute(
@@ -243,7 +277,43 @@ async def startup_event():
             "  created_at timestamptz NOT NULL DEFAULT now() "
             ");"
         ))
-    
+
+    # Renewal/notice automation: reminders
+    with engine.begin() as conn:
+        conn.execute(text(
+            "CREATE TABLE IF NOT EXISTS contract_reminders ("
+            "  id uuid PRIMARY KEY DEFAULT gen_random_uuid(), "
+            "  user_id uuid NOT NULL REFERENCES users(id) ON DELETE CASCADE, "
+            "  contract_id uuid NOT NULL REFERENCES contracts(id) ON DELETE CASCADE, "
+            "  reminder_type text NOT NULL, "
+            "  status text NOT NULL DEFAULT 'OPEN', "
+            "  due_date timestamptz NOT NULL, "
+            "  title text NOT NULL, "
+            "  body text, "
+            "  letter_json jsonb DEFAULT '{}'::jsonb, "
+            "  created_at timestamptz NOT NULL DEFAULT now() "
+            ");"
+        ))
+        conn.execute(text("CREATE INDEX IF NOT EXISTS ix_contract_reminders_user_due ON contract_reminders(user_id, due_date);"))
+
+    # Contract template library
+    with engine.begin() as conn:
+        conn.execute(text(
+            "CREATE TABLE IF NOT EXISTS contract_templates ("
+            "  id uuid PRIMARY KEY DEFAULT gen_random_uuid(), "
+            "  user_id uuid NOT NULL REFERENCES users(id) ON DELETE CASCADE, "
+            "  name text NOT NULL, "
+            "  description text, "
+            "  raw_text text NOT NULL, "
+            "  created_at timestamptz NOT NULL DEFAULT now() "
+            ");"
+        ))
+        conn.execute(text("CREATE INDEX IF NOT EXISTS ix_contract_templates_user_created ON contract_templates(user_id, created_at);"))
+
+    # New feature: ensure contracts metadata can store expiry/obligations (stored in JSONB, no schema change needed)
+    # No additional columns needed - all stored in metadata_json JSONB
+    pass
+
     # Seed default user if not exists
     from sqlalchemy.orm import sessionmaker
     SessionLocal = sessionmaker(bind=engine)
@@ -411,6 +481,114 @@ async def analyze_contract_background(contract_id: str, raw_text: str):
             contract = db.query(Contract).filter(Contract.id == contract_id).first()
             if contract:
                 existing = contract.metadata_json or {}
+                
+                # Story: Generate embeddings for semantic search
+                try:
+                    existing["processing_step"] = "Generating clause embeddings for semantic search..."
+                    contract.metadata_json = existing
+                    db.commit()
+                    
+                    clauses = db.query(ContractClause).filter(ContractClause.contract_id == contract_id).all()
+                    if clauses:
+                        texts = [c.text_content for c in clauses]
+                        import openai
+                        client = openai.AsyncOpenAI(api_key=os.getenv("OPENAI_API_KEY"))
+                        embeddings = []
+                        for i in range(0, len(texts), 100):
+                            chunk = texts[i:i+100]
+                            res = await client.embeddings.create(
+                                model="text-embedding-3-small",
+                                input=chunk
+                            )
+                            embeddings.extend([item.embedding for item in res.data])
+                        
+                        if len(embeddings) == len(clauses):
+                            for clause, emb in zip(clauses, embeddings):
+                                clause.embedding = emb
+                            db.commit()
+                            print(f"Successfully generated and saved embeddings for {len(clauses)} clauses.")
+                        else:
+                            print(f"Warning: Count mismatch in embeddings generation: {len(embeddings)} vs {len(clauses)}")
+                except Exception as emb_err:
+                    print(f"Failed to generate clause embeddings: {emb_err}")
+                
+                existing = contract.metadata_json or {}
+                
+                # Check for parent and run redline verification
+                parent_id = existing.get("parent_contract_id")
+                if parent_id:
+                    parent_contract = db.query(Contract).filter(Contract.id == parent_id).first()
+                    if parent_contract:
+                        # Update status callback to keep client informed
+                        existing["processing_step"] = "Verifying resolved redlines against parent version..."
+                        contract.metadata_json = existing
+                        db.commit()
+                        
+                        # Fetch parent contract clauses
+                        parent_clauses = db.query(ContractClause).filter(ContractClause.contract_id == parent_id).all()
+                        # Fetch current contract clauses
+                        new_clauses = db.query(ContractClause).filter(ContractClause.contract_id == contract_id).all()
+                        
+                        # Run redline verification
+                        use_llm = analysis_meta.get("analysis_mode") == "llm"
+                        try:
+                            redline_resolutions = await verify_previous_redlines(parent_clauses, new_clauses, use_llm=use_llm)
+                            existing = contract.metadata_json or {}
+                            existing["redline_resolutions"] = redline_resolutions
+                        except Exception as ve:
+                            print(f"Error during redline verification: {ve}")
+                            # Fallback using heuristic verifier manually
+                            try:
+                                from .agents import _heuristic_verify_redline
+                                resolutions = []
+                                parent_risks = [c for c in parent_clauses if (c.risk_level.value if hasattr(c.risk_level, "value") else str(c.risk_level)) in {"HIGH", "CRITICAL"}]
+                                for pc in parent_risks:
+                                    matched_nc = None
+                                    for nc in new_clauses:
+                                        if nc.clause_type.lower().strip() == pc.clause_type.lower().strip():
+                                            matched_nc = nc
+                                            break
+                                    if not matched_nc and new_clauses:
+                                        matched_nc = new_clauses[0]
+                                    
+                                    new_text = matched_nc.text_content if matched_nc else ""
+                                    nc_id = str(matched_nc.id) if matched_nc else ""
+                                    status, new_risk_level, details = _heuristic_verify_redline(pc.text_content, pc.redline_suggestion or "", new_text)
+                                    resolutions.append({
+                                        "clause_type": pc.clause_type,
+                                        "parent_clause_id": str(pc.id),
+                                        "parent_text": pc.text_content,
+                                        "parent_risk_level": pc.risk_level.value if hasattr(pc.risk_level, "value") else str(pc.risk_level),
+                                        "parent_redline_suggestion": pc.redline_suggestion or "",
+                                        "new_clause_id": nc_id,
+                                        "new_text": new_text,
+                                        "new_risk_level": new_risk_level,
+                                        "status": status,
+                                        "verification_details": details
+                                    })
+                                existing = contract.metadata_json or {}
+                                existing["redline_resolutions"] = resolutions
+                            except Exception as he:
+                                print(f"Deep fallback verification failed: {he}")
+                
+                # Run obligation extraction
+                try:
+                    obligation_result = await extract_contract_obligations(raw_text)
+                    obligations_data = [
+                        {
+                            "title": o.title,
+                            "description": o.description,
+                            "party_responsible": o.party_responsible,
+                            "due_trigger": o.due_trigger,
+                            "category": o.category,
+                        }
+                        for o in obligation_result.obligations
+                    ]
+                    existing["obligations"] = obligations_data
+                except Exception as oe:
+                    print(f"Obligation extraction failed (non-fatal): {oe}")
+                    existing["obligations"] = []
+
                 contract.metadata_json = {**existing, **analysis_meta}
                 log_contract_event(db, contract_id, "analysis", "Analysis completed", analysis_meta)
                 db.commit()
@@ -511,6 +689,7 @@ async def get_recent_events(
 async def upload_contract(
     background_tasks: BackgroundTasks, 
     file: UploadFile = File(...),
+    parent_id: str | None = None,
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user)
 ):
@@ -525,7 +704,10 @@ async def upload_contract(
     std_name = standardized_filename(meta, upload_date)
     
     # Check if exists (specifically owned by current_user)
-    existing_contract = db.query(Contract).filter(Contract.file_hash == file_hash, Contract.user_id == current_user.id).first()
+    existing_contract = None
+    if not parent_id:
+        existing_contract = db.query(Contract).filter(Contract.file_hash == file_hash, Contract.user_id == current_user.id).first()
+        
     if existing_contract:
         # Always refresh filename/metadata on upload (user requested regeneration every time).
         existing = existing_contract.metadata_json or {}
@@ -554,11 +736,26 @@ async def upload_contract(
             }
     
     # 3. Create Contract Record
+    parent_contract = None
+    version_number = 1
+    if parent_id:
+        parent_contract = db.query(Contract).filter(Contract.id == parent_id, Contract.user_id == current_user.id).first()
+        if parent_contract:
+            parent_version = parent_contract.metadata_json.get("version_number", 1) if parent_contract.metadata_json else 1
+            version_number = parent_version + 1
+            
+    metadata = {"raw_text": raw_text, **meta}
+    if parent_id and parent_contract:
+        metadata["parent_contract_id"] = parent_id
+        metadata["version_number"] = version_number
+    else:
+        metadata["version_number"] = 1
+        
     new_contract = Contract(
         filename=std_name,
         file_hash=file_hash,
         status=ContractStatus.PROCESSING,
-        metadata_json={"raw_text": raw_text, **meta},
+        metadata_json=metadata,
         user_id=current_user.id
     )
     db.add(new_contract)
@@ -573,7 +770,7 @@ async def upload_contract(
     return {
         "filename": new_contract.filename, 
         "contract_id": str(new_contract.id),
-        "status": new_contract.status,
+        "status": new_contract.status.value if hasattr(new_contract.status, "value") else str(new_contract.status),
         "message": "Analysis running in background."
     }
 
@@ -789,7 +986,7 @@ async def list_contracts(
         db.query(Contract)
         .filter(Contract.user_id == current_user.id)
         .order_by(Contract.created_at.desc())
-        .limit(20)
+        .limit(100)
         .all()
     )
     
@@ -1072,11 +1269,11 @@ class UserLoginIn(BaseModel):
 
 @app.get("/api/v1/auth/signup-status")
 async def signup_status():
-    return {"signup_disabled": DISABLE_SIGNUP}
+    return {"signup_disabled": is_signup_disabled()}
 
 @app.post("/api/v1/auth/signup")
 async def signup(payload: UserSignupIn, db: Session = Depends(get_db)):
-    if DISABLE_SIGNUP:
+    if is_signup_disabled():
         raise HTTPException(status_code=403, detail="User registration is currently disabled.")
     
     # Normalise email: strip and lower
@@ -1130,3 +1327,1012 @@ async def get_me(current_user: User = Depends(get_current_user)):
         "id": str(current_user.id),
         "email": current_user.email
     }
+
+
+# ---------------------------------------------------------------------------
+# Chat with Contract — RAG-powered Q&A using clause context
+# ---------------------------------------------------------------------------
+
+class ChatMessageIn(BaseModel):
+    question: str
+    history: list[dict] = []
+
+
+class ChatSourceOut(BaseModel):
+    clause_type: str
+    text_excerpt: str
+    risk_level: str
+
+
+class ChatResponseOut(BaseModel):
+    answer: str
+    sources: list[ChatSourceOut]
+
+
+class ReminderOut(BaseModel):
+    id: str
+    contract_id: str
+    reminder_type: str
+    status: str
+    due_date: str
+    title: str
+    body: str | None = None
+    letter: dict | None = None
+
+
+class CreateReminderIn(BaseModel):
+    reminder_type: str
+    due_date: str
+    title: str
+    body: str | None = None
+
+
+class TemplateCreateIn(BaseModel):
+    name: str
+    description: str | None = None
+    raw_text: str
+
+
+class TemplateCompareIn(BaseModel):
+    template_id: str
+
+
+class VendorEmailDraftIn(BaseModel):
+    tone: str | None = "professional"
+    include: str | None = "unresolved"  # unresolved | all
+
+@app.post("/api/v1/contracts/{contract_id}/chat")
+async def chat_with_contract(
+    contract_id: str,
+    payload: ChatMessageIn,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user)
+):
+    """
+    RAG-powered chat: finds the most relevant clauses for the question
+    and uses them as context for GPT-4.1 to answer.
+    """
+    contract = db.query(Contract).filter(Contract.id == contract_id, Contract.user_id == current_user.id).first()
+    if not contract:
+        raise HTTPException(status_code=404, detail="Contract not found")
+    if contract.status != ContractStatus.COMPLETED:
+        raise HTTPException(status_code=409, detail="Contract analysis must be completed before chatting.")
+
+    question = (payload.question or "").strip()
+    if not question:
+        raise HTTPException(status_code=400, detail="question is required")
+
+    # Fetch all clauses for this contract
+    clauses = db.query(ContractClause).filter(ContractClause.contract_id == contract_id).all()
+
+    # Prefer semantic retrieval using pgvector embeddings stored on ContractClause.
+    # If embeddings are empty, fall back to keyword overlapping, and finally raw_text.
+    top_clauses: list[ContractClause] = []
+
+    has_embeddings = any(getattr(c, "embedding", None) is not None for c in clauses)
+
+    import openai
+    client = openai.AsyncOpenAI(api_key=os.getenv("OPENAI_API_KEY"))
+
+    if has_embeddings:
+        try:
+            emb = await client.embeddings.create(
+                model="text-embedding-3-small",
+                input=question,
+            )
+            q_embedding = emb.data[0].embedding
+            
+            top_clauses = (
+                db.query(ContractClause)
+                .filter(ContractClause.contract_id == contract_id, ContractClause.embedding.isnot(None))
+                .order_by(ContractClause.embedding.op('<=>')(q_embedding))
+                .limit(5)
+                .all()
+            )
+        except Exception as e:
+            print(f"Semantic search failed, falling back: {e}")
+            has_embeddings = False
+
+    if not has_embeddings and clauses:
+        # Degrade to simple keyword overlap if no embeddings or pgvector query fails.
+        q_lower = question.lower()
+        q_words = set(w for w in q_lower.split() if len(w) > 3)
+
+        def clause_relevance(c: ContractClause) -> float:
+            text = ((c.clause_type or "") + " " + (c.text_content or "")).lower()
+            hits = sum(1 for w in q_words if w in text)
+            risk_boost = {"CRITICAL": 2.0, "HIGH": 1.5, "MEDIUM": 1.1, "LOW": 1.0}.get(
+                c.risk_level.value if c.risk_level else "LOW", 1.0
+            )
+            return hits * risk_boost
+
+        scored = sorted(clauses, key=clause_relevance, reverse=True)
+        top_clauses = scored[:5]
+
+    # Build clause context string (if available)
+    clause_context = ""
+    if top_clauses:
+        clause_context_parts = []
+        for c in top_clauses:
+            risk = c.risk_level.value if c.risk_level else "LOW"
+            clause_context_parts.append(
+                f"[{c.clause_type} | Risk: {risk}]\n{(c.text_content or '')[:900]}"
+                + (f"\nAI Risk Note: {c.risk_reasoning}" if c.risk_reasoning else "")
+            )
+        clause_context = "\n\n---\n\n".join(clause_context_parts)
+
+    # Also include contract metadata
+    meta = contract.metadata_json or {}
+    meta_summary = (
+        f"Contract: {contract.filename}\n"
+        f"Type: {meta.get('contract_type', 'Unknown')}\n"
+        f"Counterparty: {meta.get('company', 'Unknown')}\n"
+        f"Date: {meta.get('contract_date', 'Unknown')}\n"
+        f"Expiry: {meta.get('expiry_date', 'Not detected')}\n"
+        f"Overall Risk Counts: {meta.get('risk_counts', {})}"
+    )
+
+    # Build conversation history for multi-turn
+    history_messages = []
+    for h in (payload.history or [])[-6:]:  # last 6 turns max
+        role = h.get("role", "user")
+        content = h.get("content", "")
+        if role in {"user", "assistant"} and content:
+            history_messages.append({"role": role, "content": content})
+
+    system_prompt = (
+        "You are a senior procurement legal assistant embedded in ContractsPulse. "
+        "Answer questions about the contract based ONLY on the provided context. "
+        "Be concise, precise, and procurement-focused. "
+        "If the answer cannot be found in the provided context, say so clearly. "
+        "Do NOT make up contract terms. When quoting contract language, be exact. "
+        "Format responses clearly using short paragraphs. No markdown headers."
+    )
+
+    raw_text_fallback = ""
+    if not top_clauses:
+        raw_text_fallback = ((contract.metadata_json or {}).get("raw_text") or "")[:12000]
+
+    user_message = (
+        f"Contract Metadata:\n{meta_summary}\n\n"
+        f"Relevant Contract Clauses:\n{clause_context or '(none)'}\n\n"
+        f"Raw Contract Text Fallback:\n{raw_text_fallback or '(not available)'}\n\n"
+        f"Question: {question}"
+    )
+
+    messages = [
+        {"role": "system", "content": system_prompt},
+        *history_messages,
+        {"role": "user", "content": user_message},
+    ]
+
+    try:
+        primary_model = _openai_chat_model()
+        try:
+            response = await client.chat.completions.create(
+                model=primary_model,
+                messages=messages,
+                max_tokens=800,
+                temperature=0.1,
+            )
+        except Exception as inner:
+            # Model availability can vary by account; fall back to a known baseline.
+            fallback_model = os.getenv("OPENAI_MODEL_CHAT_FALLBACK", "gpt-4.1").strip()
+            response = await client.chat.completions.create(
+                model=fallback_model,
+                messages=messages,
+                max_tokens=800,
+                temperature=0.1,
+            )
+        answer = response.choices[0].message.content or "I could not generate an answer."
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Chat AI failed: {str(e)}")
+
+    sources: list[ChatSourceOut] = []
+    for c in top_clauses:
+        sources.append(
+            ChatSourceOut(
+                clause_type=c.clause_type,
+                risk_level=c.risk_level.value if c.risk_level else "LOW",
+                text_excerpt=(c.text_content or "")[:220],
+            )
+        )
+
+    return ChatResponseOut(answer=answer, sources=sources)
+
+
+# ---------------------------------------------------------------------------
+# Calendar — contract expiry and renewal timeline
+# ---------------------------------------------------------------------------
+
+@app.get("/api/v1/calendar")
+async def get_calendar(
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user)
+):
+    """
+    Returns all completed contracts with expiry/renewal date information,
+    sorted by earliest upcoming date, with urgency classification.
+    """
+    from datetime import date
+
+    contracts = (
+        db.query(Contract)
+        .filter(Contract.user_id == current_user.id)
+        .order_by(Contract.created_at.desc())
+        .all()
+    )
+
+    today = date.today()
+    items = []
+
+    for c in contracts:
+        meta = c.metadata_json or {}
+        expiry_date_str = meta.get("expiry_date")
+        contract_date_str = meta.get("contract_date")
+        renewal_notice_days = meta.get("renewal_notice_days")
+        contract_term = meta.get("contract_term")
+
+        # Compute days until expiry
+        days_until_expiry = None
+        expiry_date_parsed = None
+        if expiry_date_str:
+            try:
+                expiry_date_parsed = date.fromisoformat(expiry_date_str)
+                days_until_expiry = (expiry_date_parsed - today).days
+            except Exception:
+                pass
+
+        # Compute urgency level
+        if days_until_expiry is not None:
+            if days_until_expiry < 0:
+                urgency = "expired"
+            elif days_until_expiry <= 30:
+                urgency = "critical"
+            elif days_until_expiry <= 60:
+                urgency = "warning"
+            elif days_until_expiry <= 90:
+                urgency = "soon"
+            else:
+                urgency = "safe"
+        else:
+            urgency = "unknown"
+
+        # Compute renewal deadline
+        renewal_deadline_str = None
+        if expiry_date_parsed and renewal_notice_days:
+            from datetime import timedelta
+            renewal_deadline = expiry_date_parsed - timedelta(days=renewal_notice_days)
+            renewal_deadline_str = renewal_deadline.isoformat()
+
+        # Derive overall risk
+        risk_counts = meta.get("risk_counts", {})
+        if risk_counts.get("CRITICAL", 0) > 0:
+            overall_risk = "CRITICAL"
+        elif risk_counts.get("HIGH", 0) > 0:
+            overall_risk = "HIGH"
+        elif risk_counts.get("MEDIUM", 0) > 0:
+            overall_risk = "MEDIUM"
+        else:
+            overall_risk = "LOW"
+
+        items.append({
+            "id": str(c.id),
+            "filename": c.filename,
+            "status": c.status.value,
+            "contract_type": meta.get("contract_type"),
+            "company": meta.get("company"),
+            "contract_date": contract_date_str,
+            "expiry_date": expiry_date_str,
+            "days_until_expiry": days_until_expiry,
+            "renewal_notice_days": renewal_notice_days,
+            "renewal_deadline": renewal_deadline_str,
+            "contract_term": contract_term,
+            "urgency": urgency,
+            "overall_risk": overall_risk if c.status.value == "COMPLETED" else None,
+            "created_at": c.created_at.isoformat(),
+        })
+
+    # Sort: expired first (ascending days), then upcoming (ascending), then unknown
+    def sort_key(item):
+        d = item["days_until_expiry"]
+        if d is None:
+            return (2, 0)
+        if d < 0:
+            return (0, d)  # expired, most recent first
+        return (1, d)  # upcoming, soonest first
+
+    items.sort(key=sort_key)
+
+    # Fetch upcoming reminders (next 90 days) for bannering in the UI
+    try:
+        horizon = datetime.now(timezone.utc) + timedelta(days=90)
+        reminders = (
+            db.query(ContractReminder)
+            .filter(ContractReminder.user_id == current_user.id, ContractReminder.status == "OPEN", ContractReminder.due_date <= horizon)
+            .order_by(ContractReminder.due_date.asc())
+            .limit(50)
+            .all()
+        )
+        reminder_items = [
+            {
+                "id": str(r.id),
+                "contract_id": str(r.contract_id),
+                "reminder_type": str(r.reminder_type),
+                "due_date": r.due_date.isoformat(),
+                "title": r.title,
+            }
+            for r in reminders
+        ]
+    except Exception:
+        reminder_items = []
+
+    return {"items": items, "reminders": reminder_items}
+
+
+# ---------------------------------------------------------------------------
+# Vendors — group contracts by counterparty
+# ---------------------------------------------------------------------------
+
+@app.get("/api/v1/vendors")
+async def get_vendors(
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user)
+):
+    """
+    Groups all user contracts by vendor/counterparty name.
+    Returns aggregated risk info per vendor.
+    """
+    contracts = (
+        db.query(Contract)
+        .filter(Contract.user_id == current_user.id)
+        .order_by(Contract.created_at.desc())
+        .all()
+    )
+
+    vendor_map: dict = {}
+    severity = {"LOW": 0, "MEDIUM": 1, "HIGH": 2, "CRITICAL": 3}
+
+    for c in contracts:
+        meta = c.metadata_json or {}
+        vendor_name = (meta.get("company") or "").strip() or "Unknown Vendor"
+
+        risk_counts = meta.get("risk_counts", {})
+        if risk_counts.get("CRITICAL", 0) > 0:
+            overall_risk = "CRITICAL"
+        elif risk_counts.get("HIGH", 0) > 0:
+            overall_risk = "HIGH"
+        elif risk_counts.get("MEDIUM", 0) > 0:
+            overall_risk = "MEDIUM"
+        else:
+            overall_risk = "LOW"
+
+        if vendor_name not in vendor_map:
+            vendor_map[vendor_name] = {
+                "name": vendor_name,
+                "contracts": [],
+                "worst_risk": "LOW",
+                "total_critical": 0,
+                "total_high": 0,
+            }
+
+        vendor_map[vendor_name]["contracts"].append({
+            "id": str(c.id),
+            "filename": c.filename,
+            "status": c.status.value,
+            "overall_risk": overall_risk if c.status.value == "COMPLETED" else None,
+            "contract_type": meta.get("contract_type"),
+            "expiry_date": meta.get("expiry_date"),
+            "created_at": c.created_at.isoformat(),
+        })
+
+        vendor_map[vendor_name]["total_critical"] += risk_counts.get("CRITICAL", 0)
+        vendor_map[vendor_name]["total_high"] += risk_counts.get("HIGH", 0)
+
+        if severity.get(overall_risk, 0) > severity.get(vendor_map[vendor_name]["worst_risk"], 0):
+            if c.status.value == "COMPLETED":
+                vendor_map[vendor_name]["worst_risk"] = overall_risk
+
+    # Sort vendors: most risky first, then by contract count
+    vendors = list(vendor_map.values())
+    vendors.sort(key=lambda v: (-severity.get(v["worst_risk"], 0), -len(v["contracts"])))
+
+    return {"vendors": vendors}
+
+
+# ---------------------------------------------------------------------------
+# Clause repository search (cross-contract semantic search)
+# ---------------------------------------------------------------------------
+
+class ClauseSearchIn(BaseModel):
+    query: str
+    top_k: int = 12
+
+
+@app.post("/api/v1/clauses/search")
+async def clause_repository_search(
+    payload: ClauseSearchIn,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    q = (payload.query or "").strip()
+    if not q:
+        raise HTTPException(status_code=400, detail="query is required")
+    top_k = max(1, min(int(payload.top_k or 12), 25))
+
+    import openai
+    client = openai.AsyncOpenAI(api_key=os.getenv("OPENAI_API_KEY"))
+    try:
+        emb = await client.embeddings.create(model="text-embedding-3-small", input=q)
+        q_embedding = emb.data[0].embedding
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Embedding failed: {str(e)}")
+
+    try:
+        rows = (
+            db.query(ContractClause, Contract)
+            .join(Contract, Contract.id == ContractClause.contract_id)
+            .filter(Contract.user_id == current_user.id, ContractClause.embedding.isnot(None))
+            .order_by(ContractClause.embedding.cosine_distance(q_embedding))
+            .limit(top_k)
+            .all()
+        )
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Vector search failed: {str(e)}")
+
+    results = []
+    analytics = {"by_clause_type": {}, "by_risk_level": {}}
+    for clause, contract in rows:
+        risk = clause.risk_level.value if clause.risk_level else "LOW"
+        ctype = (clause.clause_type or "Unknown").strip()
+        analytics["by_clause_type"][ctype] = analytics["by_clause_type"].get(ctype, 0) + 1
+        analytics["by_risk_level"][risk] = analytics["by_risk_level"].get(risk, 0) + 1
+        results.append(
+            {
+                "contract_id": str(contract.id),
+                "contract_filename": contract.filename,
+                "clause_id": str(clause.id),
+                "clause_type": clause.clause_type,
+                "risk_level": risk,
+                "text_excerpt": (clause.text_content or "")[:420],
+            }
+        )
+
+    return {"results": results, "analytics": analytics}
+
+
+# ---------------------------------------------------------------------------
+# Global assistant chat (bottom-left assistant)
+# ---------------------------------------------------------------------------
+
+class AssistantChatIn(BaseModel):
+    question: str
+    history: list[dict] = []
+
+
+@app.post("/api/v1/assistant/chat")
+async def assistant_chat(
+    payload: AssistantChatIn,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    question = (payload.question or "").strip()
+    if not question:
+        raise HTTPException(status_code=400, detail="question is required")
+
+    # Retrieve cross-contract clause context for grounding
+    import openai
+    client = openai.AsyncOpenAI(api_key=os.getenv("OPENAI_API_KEY"))
+    try:
+        emb = await client.embeddings.create(model="text-embedding-3-small", input=question)
+        q_embedding = emb.data[0].embedding
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Embedding failed: {str(e)}")
+
+    matches = (
+        db.query(ContractClause, Contract)
+        .join(Contract, Contract.id == ContractClause.contract_id)
+        .filter(Contract.user_id == current_user.id, ContractClause.embedding.isnot(None))
+        .order_by(ContractClause.embedding.cosine_distance(q_embedding))
+        .limit(6)
+        .all()
+    )
+
+    context_parts = []
+    sources = []
+    for clause, contract in matches:
+        risk = clause.risk_level.value if clause.risk_level else "LOW"
+        context_parts.append(f"[{contract.filename} :: {clause.clause_type} | Risk: {risk}]\n{(clause.text_content or '')[:900]}")
+        sources.append(
+            {
+                "contract_id": str(contract.id),
+                "contract_filename": contract.filename,
+                "clause_id": str(clause.id),
+                "clause_type": clause.clause_type,
+                "risk_level": risk,
+                "text_excerpt": (clause.text_content or "")[:220],
+            }
+        )
+
+    system_prompt = (
+        "You are ContractsPulse Copilot for procurement managers. "
+        "You help answer questions and find relevant clause examples across the user's contracts. "
+        "Use ONLY the provided clause excerpts. If you lack context, ask a follow-up question or say you can't confirm. "
+        "When you cite a clause, mention the contract filename."
+    )
+    history_messages = []
+    for h in (payload.history or [])[-8:]:
+        role = h.get("role", "user")
+        content = h.get("content", "")
+        if role in {"user", "assistant"} and content:
+            history_messages.append({"role": role, "content": content})
+
+    separator = "\n\n---\n\n"
+    joined_context = separator.join(context_parts) if context_parts else "(none)"
+    user_message = f"Relevant Clauses:\n{joined_context}\n\nQuestion: {question}"
+    try:
+        primary_model = _openai_assistant_model()
+        try:
+            resp = await client.chat.completions.create(
+                model=primary_model,
+                messages=[{"role": "system", "content": system_prompt}, *history_messages, {"role": "user", "content": user_message}],
+                max_tokens=700,
+                temperature=0.2,
+            )
+        except Exception:
+            fallback_model = os.getenv("OPENAI_MODEL_ASSISTANT_FALLBACK", "gpt-4.1-mini").strip()
+            resp = await client.chat.completions.create(
+                model=fallback_model,
+                messages=[{"role": "system", "content": system_prompt}, *history_messages, {"role": "user", "content": user_message}],
+                max_tokens=700,
+                temperature=0.2,
+            )
+        answer = resp.choices[0].message.content or ""
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Assistant chat failed: {str(e)}")
+
+    return {"answer": answer, "sources": sources}
+
+
+# ---------------------------------------------------------------------------
+# Contract template library + comparison
+# ---------------------------------------------------------------------------
+
+@app.get("/api/v1/templates")
+async def list_templates(
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    rows = (
+        db.query(ContractTemplate)
+        .filter(ContractTemplate.user_id == current_user.id)
+        .order_by(ContractTemplate.created_at.desc())
+        .all()
+    )
+    return {
+        "templates": [
+            {
+                "id": str(t.id),
+                "name": t.name,
+                "description": t.description,
+                "created_at": t.created_at.isoformat(),
+            }
+            for t in rows
+        ]
+    }
+
+
+@app.post("/api/v1/templates")
+async def create_template(
+    payload: TemplateCreateIn,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    name = (payload.name or "").strip()
+    raw_text = (payload.raw_text or "").strip()
+    if not name:
+        raise HTTPException(status_code=400, detail="name is required")
+    if not raw_text:
+        raise HTTPException(status_code=400, detail="raw_text is required")
+
+    t = ContractTemplate(
+        user_id=current_user.id,
+        name=name,
+        description=(payload.description or "").strip() or None,
+        raw_text=raw_text,
+    )
+    db.add(t)
+    db.commit()
+    db.refresh(t)
+    return {"id": str(t.id)}
+
+
+@app.post("/api/v1/contracts/{contract_id}/compare-template")
+async def compare_contract_to_template(
+    contract_id: str,
+    payload: TemplateCompareIn,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    contract = db.query(Contract).filter(Contract.id == contract_id, Contract.user_id == current_user.id).first()
+    if not contract:
+        raise HTTPException(status_code=404, detail="Contract not found")
+
+    template = (
+        db.query(ContractTemplate)
+        .filter(ContractTemplate.id == payload.template_id, ContractTemplate.user_id == current_user.id)
+        .first()
+    )
+    if not template:
+        raise HTTPException(status_code=404, detail="Template not found")
+
+    clauses = db.query(ContractClause).filter(ContractClause.contract_id == contract_id).all()
+    clauses_with_embeddings = [c for c in clauses if getattr(c, "embedding", None) is not None]
+
+    # Chunk template into paragraphs for lightweight coverage check
+    paras = [p.strip() for p in re.split(r"\n{2,}", template.raw_text) if p.strip()]
+    paras = paras[:30]
+
+    import openai
+    client = openai.AsyncOpenAI(api_key=os.getenv("OPENAI_API_KEY"))
+
+    if not clauses_with_embeddings or not paras:
+        return {
+            "template_id": str(template.id),
+            "template_name": template.name,
+            "summary": "Insufficient embeddings or template text for semantic comparison.",
+            "missing_sections": [],
+            "nonstandard_sections": [],
+        }
+
+    # Embed template paragraphs
+    try:
+        emb = await client.embeddings.create(model="text-embedding-3-small", input=paras)
+        para_embeddings = [d.embedding for d in emb.data]
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Embedding failed: {str(e)}")
+
+    missing_sections = []
+    for i, (para, pe) in enumerate(zip(paras, para_embeddings)):
+        # Find the closest clause; if still far, mark as missing (heuristic threshold)
+        try:
+            nearest = (
+                db.query(ContractClause)
+                .filter(ContractClause.contract_id == contract_id, ContractClause.embedding.isnot(None))
+                .order_by(ContractClause.embedding.cosine_distance(pe))
+                .limit(1)
+                .all()
+            )
+        except Exception:
+            nearest = []
+        if not nearest:
+            missing_sections.append({"index": i, "template_excerpt": para[:260]})
+            continue
+
+        # Without the raw distance value from SQLAlchemy ordering, use a conservative heuristic:
+        # if clause type doesn't overlap with the para keywords, treat as potentially missing.
+        clause = nearest[0]
+        key = " ".join(re.findall(r"[A-Za-z]{5,}", para.lower())[:12])
+        if key and key not in ((clause.text_content or "").lower()):
+            missing_sections.append({"index": i, "template_excerpt": para[:260], "nearest_clause_type": clause.clause_type})
+
+    # Clause position sanity: compare ordering of top similar template paras vs clause index order
+    # (This is intentionally lightweight; UI can evolve later.)
+    nonstandard_sections = []
+    if len(paras) >= 6:
+        nonstandard_sections.append(
+            {
+                "note": "Position analysis is a v1 heuristic; focus on missing sections first.",
+            }
+        )
+
+    return {
+        "template_id": str(template.id),
+        "template_name": template.name,
+        "missing_sections": missing_sections[:12],
+        "nonstandard_sections": nonstandard_sections,
+    }
+
+
+# ---------------------------------------------------------------------------
+# Obligations — get or generate obligations for a contract
+# ---------------------------------------------------------------------------
+
+@app.get("/api/v1/contracts/{contract_id}/obligations")
+async def get_obligations(
+    contract_id: str,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user)
+):
+    """Return stored obligations for a contract."""
+    contract = db.query(Contract).filter(Contract.id == contract_id, Contract.user_id == current_user.id).first()
+    if not contract:
+        raise HTTPException(status_code=404, detail="Contract not found")
+
+    obligations = (contract.metadata_json or {}).get("obligations", None)
+    return {
+        "obligations": obligations,  # None = not yet generated; [] = generated but empty
+        "generated": obligations is not None,
+    }
+
+
+# ---------------------------------------------------------------------------
+# Renewal/notice automation — reminders + letter generation
+# ---------------------------------------------------------------------------
+
+def _parse_iso_date(dt_str: str):
+    try:
+        return datetime.fromisoformat(dt_str.replace("Z", "+00:00"))
+    except Exception:
+        return None
+
+
+def _generate_renewal_notice_letter(contract: Contract) -> dict:
+    meta = contract.metadata_json or {}
+    vendor = meta.get("company") or "Counterparty"
+    expiry_date = meta.get("expiry_date") or ""
+    renewal_notice_days = meta.get("renewal_notice_days") or ""
+    filename = contract.filename
+
+    subject = f"Notice of Non-Renewal / Opt-Out — {filename}"
+    body = (
+        f"To: {vendor}\n"
+        f"Re: {filename}\n\n"
+        f"This letter provides written notice that we elect not to renew / to opt out of any automatic renewal under the Agreement.\n\n"
+        f"Please confirm in writing that the Agreement will terminate at the end of the current term. "
+        f"Our records indicate an expiry/term end date of {expiry_date} and a notice period of {renewal_notice_days} days (if applicable).\n\n"
+        f"Sincerely,\n"
+        f"[Your Name]\n"
+        f"[Title]\n"
+        f"[Company]\n"
+    )
+    return {"subject": subject, "body": body}
+
+
+def _format_redline_items_for_email(resolutions: list[dict], include: str) -> tuple[str, list[dict]]:
+    include = (include or "unresolved").lower().strip()
+    if include not in {"unresolved", "all"}:
+        include = "unresolved"
+
+    def is_included(r: dict) -> bool:
+        if include == "all":
+            return True
+        return (r.get("status") or "").upper() in {"UNRESOLVED", "PARTIALLY_RESOLVED"}
+
+    items = [r for r in (resolutions or []) if is_included(r)]
+    bullets = []
+    for r in items:
+        clause_type = r.get("clause_type") or "Clause"
+        status = (r.get("status") or "UNRESOLVED").replace("_", " ").title()
+        originally = (r.get("parent_risk_level") or "").title()
+        proposed = (r.get("parent_redline_suggestion") or "").strip()
+        bullets.append(
+            {
+                "clause_type": clause_type,
+                "status": status,
+                "original_risk_level": originally,
+                "proposed_redline": proposed[:900],
+            }
+        )
+    text = "\n".join([f"- {b['clause_type']} ({b['status']}; originally {b['original_risk_level']})" for b in bullets]) or "- (none)"
+    return text, bullets
+
+
+@app.post("/api/v1/contracts/{contract_id}/redlines/email")
+async def generate_vendor_redlines_email(
+    contract_id: str,
+    payload: VendorEmailDraftIn,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    """
+    Generate (but do not send) an email draft to the vendor summarizing proposed redlines
+    and requested changes based on redline verification results.
+    """
+    contract = db.query(Contract).filter(Contract.id == contract_id, Contract.user_id == current_user.id).first()
+    if not contract:
+        raise HTTPException(status_code=404, detail="Contract not found")
+
+    meta = contract.metadata_json or {}
+    vendor = (meta.get("company") or "Vendor").strip()
+    resolutions = meta.get("redline_resolutions") or []
+    if not isinstance(resolutions, list):
+        resolutions = []
+
+    include = (payload.include or "unresolved").lower().strip()
+    bullets_text, bullets = _format_redline_items_for_email(resolutions, include=include)
+
+    import openai
+    client = openai.AsyncOpenAI(api_key=os.getenv("OPENAI_API_KEY"))
+
+    system_prompt = (
+        "You are a senior procurement manager writing a concise email to a vendor. "
+        "Your goal is to clearly request specific contract edits (redlines) without being adversarial. "
+        "Do not claim legal conclusions. Do not invent contract terms. "
+        "Output ONLY JSON with keys: subject, body."
+    )
+
+    tone = (payload.tone or "professional").strip().lower()
+    filename = contract.filename
+    version_num = (meta.get("version_number") or "")
+    subject_hint = f"Redlines / Requested Revisions — {filename}"
+
+    user_prompt = (
+        f"Vendor: {vendor}\n"
+        f"Contract: {filename}\n"
+        f"Contract Version: {version_num}\n"
+        f"Include: {include}\n"
+        f"Tone: {tone}\n\n"
+        f"Requested items:\n{bullets_text}\n\n"
+        "Write an email that:\n"
+        "- Opens with appreciation and context\n"
+        "- Lists requested edits as bullets (group by clause type)\n"
+        "- Asks for confirmation and a timeline\n"
+        "- Mentions we can hop on a quick call if helpful\n"
+        f"Subject should be similar to: {subject_hint}\n"
+    )
+
+    try:
+        try:
+            resp = await client.chat.completions.create(
+                model=_openai_chat_model(),
+                messages=[{"role": "system", "content": system_prompt}, {"role": "user", "content": user_prompt}],
+                max_tokens=550,
+                temperature=0.2,
+                response_format={"type": "json_object"},
+            )
+        except Exception:
+            resp = await client.chat.completions.create(
+                model=os.getenv("OPENAI_MODEL_CHAT_FALLBACK", "gpt-4.1").strip(),
+                messages=[{"role": "system", "content": system_prompt}, {"role": "user", "content": user_prompt}],
+                max_tokens=550,
+                temperature=0.2,
+                response_format={"type": "json_object"},
+            )
+        content = resp.choices[0].message.content or "{}"
+        import json
+        draft = json.loads(content)
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Email generation failed: {str(e)}")
+
+    subject = (draft.get("subject") or subject_hint).strip()
+    body = (draft.get("body") or "").strip()
+    if not body:
+        body = (
+            f"Hi {vendor},\n\n"
+            f"Sharing a few requested edits for {filename}:\n{bullets_text}\n\n"
+            "Thanks,\n"
+        )
+
+    return {
+        "email": {"subject": subject, "body": body},
+        "items": bullets,
+        "generated_by_ai": True,
+    }
+
+
+@app.get("/api/v1/contracts/{contract_id}/reminders")
+async def list_contract_reminders(
+    contract_id: str,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    contract = db.query(Contract).filter(Contract.id == contract_id, Contract.user_id == current_user.id).first()
+    if not contract:
+        raise HTTPException(status_code=404, detail="Contract not found")
+
+    rows = (
+        db.query(ContractReminder)
+        .filter(ContractReminder.contract_id == contract_id, ContractReminder.user_id == current_user.id)
+        .order_by(ContractReminder.due_date.asc())
+        .all()
+    )
+    return {
+        "reminders": [
+            ReminderOut(
+                id=str(r.id),
+                contract_id=str(r.contract_id),
+                reminder_type=str(r.reminder_type),
+                status=str(r.status),
+                due_date=r.due_date.isoformat(),
+                title=r.title,
+                body=r.body,
+                letter=r.letter_json or None,
+            ).model_dump()
+            for r in rows
+        ]
+    }
+
+
+@app.post("/api/v1/contracts/{contract_id}/reminders")
+async def create_contract_reminder(
+    contract_id: str,
+    payload: CreateReminderIn,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    contract = db.query(Contract).filter(Contract.id == contract_id, Contract.user_id == current_user.id).first()
+    if not contract:
+        raise HTTPException(status_code=404, detail="Contract not found")
+
+    due_dt = _parse_iso_date(payload.due_date)
+    if not due_dt:
+        raise HTTPException(status_code=400, detail="Invalid due_date; expected ISO datetime")
+
+    reminder = ContractReminder(
+        user_id=current_user.id,
+        contract_id=contract.id,
+        reminder_type=payload.reminder_type,
+        status="OPEN",
+        due_date=due_dt,
+        title=(payload.title or "").strip() or "Reminder",
+        body=(payload.body or "").strip() or None,
+        letter_json={},
+    )
+    db.add(reminder)
+    db.commit()
+    db.refresh(reminder)
+
+    return {"id": str(reminder.id)}
+
+
+@app.post("/api/v1/contracts/{contract_id}/letters/renewal-notice")
+async def generate_renewal_notice_letter(
+    contract_id: str,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    contract = db.query(Contract).filter(Contract.id == contract_id, Contract.user_id == current_user.id).first()
+    if not contract:
+        raise HTTPException(status_code=404, detail="Contract not found")
+
+    letter = _generate_renewal_notice_letter(contract)
+    return {"letter": letter}
+
+
+@app.post("/api/v1/contracts/{contract_id}/obligations/generate")
+async def generate_obligations_on_demand(
+    contract_id: str,
+    background_tasks: BackgroundTasks,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user)
+):
+    """Generate obligations on-demand for contracts that were analyzed before this feature."""
+    contract = db.query(Contract).filter(Contract.id == contract_id, Contract.user_id == current_user.id).first()
+    if not contract:
+        raise HTTPException(status_code=404, detail="Contract not found")
+    if contract.status != ContractStatus.COMPLETED:
+        raise HTTPException(status_code=409, detail="Contract must be completed to generate obligations.")
+
+    raw_text = (contract.metadata_json or {}).get("raw_text", "")
+    if not raw_text:
+        raise HTTPException(status_code=400, detail="Raw text not available for this contract.")
+
+    async def _generate(cid: str, text: str):
+        from .database import SessionLocal
+        db2 = SessionLocal()
+        try:
+            result = await extract_contract_obligations(text)
+            obligations_data = [
+                {
+                    "title": o.title,
+                    "description": o.description,
+                    "party_responsible": o.party_responsible,
+                    "due_trigger": o.due_trigger,
+                    "category": o.category,
+                }
+                for o in result.obligations
+            ]
+            c = db2.query(Contract).filter(Contract.id == cid).first()
+            if c:
+                existing = c.metadata_json or {}
+                existing["obligations"] = obligations_data
+                c.metadata_json = existing
+                db2.commit()
+        except Exception as e:
+            print(f"On-demand obligation generation failed: {e}")
+        finally:
+            db2.close()
+
+    background_tasks.add_task(_generate, contract_id, raw_text)
+    return {"message": "Obligation generation started.", "status": "generating"}

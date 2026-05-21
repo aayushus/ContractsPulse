@@ -1,7 +1,8 @@
 class AuthState {
 	token = $state<string | null>(null);
 	user = $state<{ id: string; email: string } | null>(null);
-	signupDisabled = $state<boolean>(false);
+	// Safe default: hide signup until the API confirms it's enabled.
+	signupDisabled = $state<boolean>(true);
 	initialized = $state<boolean>(false);
 
 	get isAuthenticated(): boolean {

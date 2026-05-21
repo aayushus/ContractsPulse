@@ -111,10 +111,55 @@ def extract_contract_metadata(raw_text: str) -> dict:
             except Exception:
                 contract_date = None
 
+    # Expiry date: scan the full text (not just head) for explicit expiry language.
+    expiry_date = None
+    expiry_patterns = [
+        r"(?:shall\s+)?(?:expire|terminate|end|expir)\s+(?:on|as\s+of)\s+((?:January|February|March|April|May|June|July|August|September|October|November|December)\s+\d{1,2},?\s+\d{4})",
+        r"(?:valid\s+until|effective\s+until|agreement\s+ends?|term\s+ends?)\s*:?\s*((?:January|February|March|April|May|June|July|August|September|October|November|December)\s+\d{1,2},?\s+\d{4})",
+        r"(?:expiration\s+date|termination\s+date)\s*:?\s*(\d{1,2}/\d{1,2}/\d{2,4})",
+        r"(?:term\s+of|initial\s+term)[^.]{0,80}(\d{1,2}/\d{1,2}/\d{2,4})",
+    ]
+    for pat in expiry_patterns:
+        m = re.search(pat, text, flags=re.I)
+        if m:
+            raw_d = m.group(1).strip().replace(",", "")
+            for fmt in ["%B %d %Y", "%m/%d/%Y", "%m/%d/%y"]:
+                try:
+                    expiry_date = datetime.strptime(raw_d, fmt).date().isoformat()
+                    break
+                except Exception:
+                    continue
+            if expiry_date:
+                break
+
+    # Renewal notice days: e.g. "30 days prior to renewal" or "60 days before expiration".
+    renewal_notice_days = None
+    m = re.search(
+        r"(\d{1,3})\s+(?:calendar\s+)?days?\s+(?:prior\s+to|before|in\s+advance\s+of)\s+(?:the\s+)?(?:renewal|expir|terminat)",
+        text, flags=re.I
+    )
+    if m:
+        try:
+            renewal_notice_days = int(m.group(1))
+        except Exception:
+            renewal_notice_days = None
+
+    # Contract term duration: e.g. "for a period of 12 months" / "initial term of one (1) year".
+    contract_term = None
+    m = re.search(
+        r"(?:initial\s+term|term\s+of|for\s+a\s+period\s+of|period\s+of)\s+(?:one\s+\(1\)|two\s+\(2\)|three\s+\(3\)|four\s+\(4\)|five\s+\(5\)|1|2|3|4|5|6|12|18|24|36)\s*(year|month)",
+        text, flags=re.I
+    )
+    if m:
+        contract_term = m.group(0).strip()
+
     return {
         "contract_date": contract_date,
         "company": company,
         "contract_type": contract_type,
+        "expiry_date": expiry_date,
+        "renewal_notice_days": renewal_notice_days,
+        "contract_term": contract_term,
     }
 
 

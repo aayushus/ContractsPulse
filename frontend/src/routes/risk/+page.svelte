@@ -3,7 +3,6 @@
 	import { goto } from '$app/navigation';
 	import { apiFetch } from '$lib/api';
 	import { toast } from '$lib/toastStore';
-	import { premiumCard } from '$lib/actions';
 
 	type RiskItem = {
 		id: string;
@@ -162,28 +161,28 @@
 
 <div class="page-content">
 	<div class="metric-row">
-		<div class="metric-card panel bg-glass-card" use:premiumCard={{ color: 'var(--color-critical)' }}>
+		<div class="metric-card panel bg-glass-card">
 			<div class="metric-header flex-between">
 				<span class="metric-label">Critical Vulnerabilities</span>
 				<span class="m-dot m-dot-critical"></span>
 			</div>
 			<div class="metric-value text-critical font-bold">{criticalCount}</div>
 		</div>
-		<div class="metric-card panel bg-glass-card" use:premiumCard={{ color: 'var(--color-high)' }}>
+		<div class="metric-card panel bg-glass-card">
 			<div class="metric-header flex-between">
 				<span class="metric-label">High-Risk Clauses</span>
 				<span class="m-dot m-dot-high"></span>
 			</div>
 			<div class="metric-value text-high font-bold">{highCount}</div>
 		</div>
-		<div class="metric-card panel bg-glass-card" use:premiumCard>
+		<div class="metric-card panel bg-glass-card">
 			<div class="metric-header flex-between">
 				<span class="metric-label">Affected Documents</span>
 				<span class="m-dot m-dot-neutral"></span>
 			</div>
 			<div class="metric-value text-primary">{affectedDocsCount}</div>
 		</div>
-		<div class="metric-card panel bg-glass-card" use:premiumCard={{ color: 'var(--text-secondary)' }}>
+		<div class="metric-card panel bg-glass-card">
 			<div class="metric-header flex-between">
 				<span class="metric-label">Average Risks/Document</span>
 				<span class="m-dot m-dot-neutral"></span>
@@ -305,14 +304,14 @@
 			{#each filteredRisks as r, i (r.id)}
 				{@const isCritical = r.risk_level === 'CRITICAL'}
 				{@const isExpanded = expandedRedlines[r.id]}
-				<div class="risk-card panel risk-{r.risk_level.toLowerCase()} stagger-entry" style="--index: {i}" class:card-expanded={isExpanded} use:premiumCard={{ color: r.risk_level === 'CRITICAL' ? 'var(--color-critical)' : 'var(--color-high)' }}>
+				<div class="risk-card panel risk-{r.risk_level.toLowerCase()} stagger-entry" style="--index: {i}" class:card-expanded={isExpanded}>
 					<!-- Header Section -->
 					<div class="risk-card-header flex-between">
 						<div class="risk-origin flex-row gap-8">
 							<span class="origin-label">Document:</span>
-							<button class="doc-chip-btn truncate" onclick={() => goto(`/contracts/${r.contract_id}`)} title="View Contract">
-								<svg class="paperclip-icon" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21.44 11.05l-9.19 9.19a6 6 0 0 1-8.49-8.49l9.19-9.19a4 4 0 0 1 5.66 5.66l-9.2 9.19a2 2 0 0 1-2.83-2.83l8.49-8.48"/></svg>
-								{r.contract_filename}
+							<button class="doc-chip-btn" onclick={() => goto(`/contracts/${r.contract_id}`)} title="View Contract">
+								<svg class="paperclip-icon" style="flex-shrink: 0;" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21.44 11.05l-9.19 9.19a6 6 0 0 1-8.49-8.49l9.19-9.19a4 4 0 0 1 5.66 5.66l-9.2 9.19a2 2 0 0 1-2.83-2.83l8.49-8.48"/></svg>
+								<span class="filename-text" title={r.contract_filename}>{r.contract_filename}</span>
 							</button>
 						</div>
 
@@ -530,7 +529,7 @@
 		font-size: 12px;
 		font-weight: 500;
 		padding: 6px 12px;
-		border-radius: 99px;
+		border-radius: 6px;
 		cursor: pointer;
 		transition: all 150ms var(--ease-out);
 	}
@@ -639,7 +638,7 @@
 		background: var(--bg-glass-card);
 		backdrop-filter: blur(12px);
 		border: 1px solid var(--border-glass);
-		border-radius: 14px;
+		border-radius: 8px;
 		box-shadow: 
 			0 1px 2px rgba(0, 0, 0, 0.01),
 			0 10px 30px rgba(0, 0, 0, 0.03),
@@ -651,7 +650,7 @@
 		overflow: hidden;
 	}
 
-	[data-theme="dark"] .risk-card {
+	:global([data-theme="dark"]) .risk-card {
 		box-shadow: 
 			0 1px 2px rgba(0, 0, 0, 0.15),
 			0 16px 40px rgba(0, 0, 0, 0.35),
@@ -676,7 +675,7 @@
 		top: 24px;
 		bottom: 24px;
 		width: 4px;
-		border-radius: 99px;
+		border-radius: 4px;
 		transition: background 180ms ease, box-shadow 180ms ease;
 	}
 
@@ -690,10 +689,10 @@
 	}
 	.risk-critical:hover {
 		border-color: rgba(217, 56, 58, 0.35);
-		box-shadow: 0 12px 36px rgba(217, 56, 58, 0.06), inset 0 1px 0 rgba(255, 255, 255, 0.6);
+		box-shadow: var(--shadow-lg), 0 0 20px rgba(217, 56, 58, 0.06), inset 0 1px 0 rgba(255, 255, 255, 0.6);
 	}
-	[data-theme="dark"] .risk-critical:hover {
-		box-shadow: 0 16px 40px rgba(0, 0, 0, 0.35), 0 0 20px rgba(217, 56, 58, 0.08), inset 0 1px 0 rgba(255, 255, 255, 0.06);
+	:global([data-theme="dark"]) .risk-critical:hover {
+		box-shadow: var(--shadow-lg), 0 0 20px rgba(217, 56, 58, 0.08), inset 0 1px 0 rgba(255, 255, 255, 0.06);
 	}
 
 	.risk-high {
@@ -705,10 +704,10 @@
 	}
 	.risk-high:hover {
 		border-color: rgba(207, 34, 46, 0.3);
-		box-shadow: 0 12px 36px rgba(207, 34, 46, 0.05), inset 0 1px 0 rgba(255, 255, 255, 0.6);
+		box-shadow: var(--shadow-lg), 0 0 20px rgba(207, 34, 46, 0.05), inset 0 1px 0 rgba(255, 255, 255, 0.6);
 	}
-	[data-theme="dark"] .risk-high:hover {
-		box-shadow: 0 16px 40px rgba(0, 0, 0, 0.35), 0 0 20px rgba(207, 34, 46, 0.06), inset 0 1px 0 rgba(255, 255, 255, 0.06);
+	:global([data-theme="dark"]) .risk-high:hover {
+		box-shadow: var(--shadow-lg), 0 0 20px rgba(207, 34, 46, 0.06), inset 0 1px 0 rgba(255, 255, 255, 0.06);
 	}
 
 	.risk-card-header {
@@ -850,7 +849,7 @@
 		border-color: rgba(217, 56, 58, 0.12);
 	}
 
-	[data-theme="dark"] .diff-column-original {
+	:global([data-theme="dark"]) .diff-column-original {
 		background: rgba(255, 59, 48, 0.015);
 		border-color: rgba(255, 59, 48, 0.15);
 	}
@@ -860,7 +859,7 @@
 		border-color: rgba(46, 160, 67, 0.12);
 	}
 
-	[data-theme="dark"] .diff-column-suggested {
+	:global([data-theme="dark"]) .diff-column-suggested {
 		background: rgba(63, 185, 80, 0.015);
 		border-color: rgba(63, 185, 80, 0.15);
 	}
@@ -905,7 +904,7 @@
 		text-shadow: 0 0 1px rgba(217, 56, 58, 0.15);
 	}
 
-	[data-theme="dark"] .diff-column-original .diff-content {
+	:global([data-theme="dark"]) .diff-column-original .diff-content {
 		text-shadow: 0 0 8px rgba(255, 59, 48, 0.2);
 	}
 
@@ -914,7 +913,7 @@
 		text-shadow: 0 0 1px rgba(63, 185, 80, 0.15);
 	}
 
-	[data-theme="dark"] .diff-column-suggested .diff-content {
+	:global([data-theme="dark"]) .diff-column-suggested .diff-content {
 		text-shadow: 0 0 8px rgba(63, 185, 80, 0.2);
 	}
 

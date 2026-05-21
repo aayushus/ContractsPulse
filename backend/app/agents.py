@@ -74,9 +74,70 @@ risk_agent = Agent(
     )
 )
 
+# Agent 3: The Redline Verifier
+# Responsible for comparing original clause, suggested redline, and counterparty's updated language.
+class RedlineVerification(BaseModel):
+    status: str = Field(description="Must be exactly: RESOLVED, PARTIALLY_RESOLVED, or UNRESOLVED")
+    new_risk_level: str = Field(description="Must be exactly one of: LOW, MEDIUM, HIGH, CRITICAL")
+    verification_details: str = Field(description="A concise plain-English explanation of why this status was chosen. Be specific about what was changed or what risks remain.")
+
+redline_verifier_agent = Agent(
+    os.getenv("OPENAI_MODEL_RISK", "openai-chat:gpt-4.1"),
+    output_type=RedlineVerification,
+    retries=3,
+    system_prompt=(
+        "You are a Senior Legal Counsel specializing in contract negotiations and redline validation. "
+        "Your task is to compare the original (parent) contract clause text, the suggested redline recommendation, "
+        "and the new (child) updated contract clause text. "
+        "Analyze whether the counterparty successfully resolved the original legal concern and "
+        "implemented the spirit of the redline suggestion. "
+        "Assign a status (RESOLVED, PARTIALLY_RESOLVED, or UNRESOLVED), evaluate the new risk level "
+        "(LOW, MEDIUM, HIGH, or CRITICAL), and provide clear, professional explanation details about "
+        "the changes made or remaining liabilities. Speak directly, and be extremely objective."
+    )
+)
+
+# Agent 4: The Obligation Extractor
+# Extracts actionable procurement obligations from the full contract text.
+class ObligationItem(BaseModel):
+    title: str = Field(description="Short, action-oriented title. e.g. 'Submit Monthly Invoice', 'Provide 30-Day Termination Notice'")
+    description: str = Field(description="Concise description of the obligation in plain English.")
+    party_responsible: str = Field(description="Which party must fulfill this: 'Vendor', 'Customer', 'Both', or 'Either'")
+    due_trigger: str = Field(description="When is this due? e.g. 'Net 30 after invoice', 'Upon contract expiry', '30 days before renewal', 'Monthly', 'Upon delivery'")
+    category: str = Field(description="One of: payment, delivery, notice, reporting, compliance, renewal, confidentiality, other")
+
+class ObligationExtractionResult(BaseModel):
+    obligations: List[ObligationItem] = Field(description="All actionable obligations extracted from the contract. Focus on concrete, time-bound, or triggered duties.")
+
+obligation_agent = Agent(
+    os.getenv("OPENAI_MODEL_EXTRACTOR", "openai-chat:gpt-4.1-mini"),
+    output_type=ObligationExtractionResult,
+    retries=2,
+    system_prompt=(
+        "You are an expert procurement manager and legal analyst. "
+        "Extract all actionable obligations from the provided contract text. "
+        "Focus on concrete duties that require action: payment deadlines, delivery requirements, "
+        "notice obligations, reporting requirements, renewal deadlines, and compliance obligations. "
+        "For each obligation, identify WHO must do WHAT, and WHEN (triggered by what event or date). "
+        "Skip vague or aspirational language. Only extract obligations with a clear responsible party and trigger. "
+        "Limit to the 15 most important and actionable obligations."
+    )
+)
+
+async def extract_contract_obligations(raw_text: str) -> ObligationExtractionResult:
+    """Run the obligation extractor on the full contract text."""
+    try:
+        run = await obligation_agent.run(raw_text[:12000])  # bound context
+        return run.output
+    except Exception as e:
+        print(f"Obligation extraction failed: {e}")
+        return ObligationExtractionResult(obligations=[])
+
+
 # ---------------------------------------------------------
 # Orchestration Example
 # ---------------------------------------------------------
+
 
 async def process_contract_text(raw_text: str, update_status_callback=None):
     """
@@ -442,3 +503,103 @@ async def process_contract_text_fallback(raw_text: str, update_status_callback=N
     if update_status_callback:
         await update_status_callback("Saving results to database...")
     return analyzed
+
+
+async def verify_previous_redlines(parent_clauses: list, new_clauses: list, use_llm: bool = True) -> list:
+    """
+    Compares parent contract clauses that had HIGH or CRITICAL risk with the new contract clauses
+    to verify if the recommended redlines were successfully resolved.
+    """
+    resolutions = []
+    
+    # We only care about high/critical risks in the parent contract
+    parent_risks = [c for c in parent_clauses if (c.risk_level.value if hasattr(c.risk_level, "value") else str(c.risk_level)) in {"HIGH", "CRITICAL"}]
+    
+    for pc in parent_risks:
+        # Find matching new clause of same type (case-insensitive)
+        matched_nc = None
+        for nc in new_clauses:
+            nc_type = nc.clause_type if hasattr(nc, "clause_type") else (nc.get("clause") if isinstance(nc, dict) else nc).clause_type
+            if nc_type.lower().strip() == pc.clause_type.lower().strip():
+                matched_nc = nc
+                break
+                
+        # If no exact match, skip or take a best-effort candidate
+        if not matched_nc and new_clauses:
+            matched_nc = new_clauses[0]
+            
+        if matched_nc:
+            # Handle if matched_nc is dict (like analyzed_clauses result) or SQL Alchemy object
+            if isinstance(matched_nc, dict):
+                nc_clause = matched_nc.get("clause")
+                new_text = nc_clause.text_content if nc_clause else ""
+                nc_id = ""
+            else:
+                new_text = matched_nc.text_content
+                nc_id = str(matched_nc.id) if hasattr(matched_nc, "id") else ""
+                
+            parent_text = pc.text_content
+            parent_redline = pc.redline_suggestion or ""
+            
+            if use_llm and parent_redline.strip():
+                try:
+                    prompt = (
+                        f"Clause Type: {pc.clause_type}\n\n"
+                        f"Original Text (Parent):\n{parent_text}\n\n"
+                        f"Suggested Redline:\n{parent_redline}\n\n"
+                        f"New Text (Child):\n{new_text}"
+                    )
+                    run_result = await redline_verifier_agent.run(prompt)
+                    verification: RedlineVerification = run_result.output
+                    
+                    status = verification.status.upper().strip()
+                    new_risk_level = verification.new_risk_level.upper().strip()
+                    details = verification.verification_details
+                except Exception as e:
+                    print(f"Failed to verify redline via LLM: {e}")
+                    status, new_risk_level, details = _heuristic_verify_redline(parent_text, parent_redline, new_text)
+            else:
+                status, new_risk_level, details = _heuristic_verify_redline(parent_text, parent_redline, new_text)
+                
+            resolutions.append({
+                "clause_type": pc.clause_type,
+                "parent_clause_id": str(pc.id),
+                "parent_text": parent_text,
+                "parent_risk_level": pc.risk_level.value if hasattr(pc.risk_level, "value") else str(pc.risk_level),
+                "parent_redline_suggestion": parent_redline,
+                "new_clause_id": nc_id,
+                "new_text": new_text,
+                "new_risk_level": new_risk_level,
+                "status": status,
+                "verification_details": details
+            })
+            
+    return resolutions
+
+def _heuristic_verify_redline(parent_text: str, parent_redline: str, new_text: str) -> tuple[str, str, str]:
+    """
+    Deterministic fallback to compare texts if LLM is unavailable or disabled.
+    """
+    p_text = (parent_text or "").strip().lower()
+    r_text = (parent_redline or "").strip().lower()
+    n_text = (new_text or "").strip().lower()
+    
+    if not r_text:
+        return "UNRESOLVED", "HIGH", "No redline recommendation was available to verify against."
+        
+    # Standard text similarity: if the new text is identical to parent text, it is unresolved
+    if p_text == n_text:
+        return "UNRESOLVED", "HIGH", "The updated clause text is completely identical to the original clause text. No changes were made."
+        
+    # Check if a key phrase from the redline is present in the new text
+    words = [w for w in r_text.split() if len(w) > 4]
+    matched_words = sum(1 for w in words if w in n_text)
+    match_ratio = matched_words / len(words) if words else 0.0
+    
+    if match_ratio > 0.6 or r_text in n_text:
+        return "RESOLVED", "LOW", "The new text incorporates key provisions from the recommended redline language, limiting potential exposure."
+    elif match_ratio > 0.2:
+        return "PARTIALLY_RESOLVED", "MEDIUM", "The clause was modified from its original state, but did not fully incorporate the recommended protective redline language."
+    else:
+        return "UNRESOLVED", "HIGH", "The clause was modified but did not adopt any of the protective terms recommended in the redline suggestion."
+

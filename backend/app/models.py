@@ -100,3 +100,44 @@ class ClauseFeedback(Base):
     is_risky = Column(Boolean, nullable=False)  # True = user says risky; False = user says not risky
     note = Column(Text, nullable=True)
     created_at = Column(DateTime, default=datetime.utcnow, index=True)
+
+
+class ReminderType(str, enum.Enum):
+    RENEWAL_NOTICE = "RENEWAL_NOTICE"
+    EXPIRY_CHECKIN = "EXPIRY_CHECKIN"
+
+
+class ReminderStatus(str, enum.Enum):
+    OPEN = "OPEN"
+    DONE = "DONE"
+
+
+class ContractReminder(Base):
+    __tablename__ = "contract_reminders"
+
+    id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    user_id = Column(UUID(as_uuid=True), ForeignKey("users.id", ondelete="CASCADE"), nullable=False, index=True)
+    contract_id = Column(UUID(as_uuid=True), ForeignKey("contracts.id", ondelete="CASCADE"), nullable=False, index=True)
+
+    reminder_type = Column(Enum(ReminderType), nullable=False)
+    status = Column(Enum(ReminderStatus), default=ReminderStatus.OPEN, nullable=False)
+
+    due_date = Column(DateTime, nullable=False, index=True)
+    title = Column(String, nullable=False)
+    body = Column(Text, nullable=True)
+
+    letter_json = Column(JSONB, default={})
+    created_at = Column(DateTime, default=datetime.utcnow, index=True)
+
+
+class ContractTemplate(Base):
+    __tablename__ = "contract_templates"
+
+    id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    user_id = Column(UUID(as_uuid=True), ForeignKey("users.id", ondelete="CASCADE"), nullable=False, index=True)
+
+    name = Column(String, nullable=False)
+    description = Column(Text, nullable=True)
+    raw_text = Column(Text, nullable=False)
+
+    created_at = Column(DateTime, default=datetime.utcnow, index=True)

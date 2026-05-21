@@ -3,8 +3,9 @@
 	import { toasts, toast } from '$lib/toastStore';
 	import { page } from '$app/stores';
 	import { authState } from '$lib/auth.svelte';
-	import { apiFetch } from '$lib/api';
+	import { apiFetch, getApiBase } from '$lib/api';
 	import { onMount } from 'svelte';
+	import { navigating } from '$app/stores';
 
 	let { children } = $props();
 
@@ -15,6 +16,37 @@
 	let loading = $state(false);
 
 	let theme = $state<'light' | 'dark'>('light');
+
+	// Global assistant
+	type AssistantRole = 'user' | 'assistant';
+	type AssistantTurn = { role: AssistantRole; content: string; sources?: any[] };
+	let assistantOpen = $state(false);
+	let assistantMessages = $state<AssistantTurn[]>([]);
+	let assistantInput = $state('');
+	let assistantLoading = $state(false);
+
+	async function sendAssistant() {
+		const q = (assistantInput || '').trim();
+		if (!q || assistantLoading) return;
+		const history = assistantMessages.map((m) => ({ role: m.role, content: m.content }));
+		assistantMessages = [...assistantMessages, { role: 'user', content: q }];
+		assistantInput = '';
+		assistantLoading = true;
+		try {
+			const res = await apiFetch('/api/v1/assistant/chat', {
+				method: 'POST',
+				headers: { 'Content-Type': 'application/json' },
+				body: JSON.stringify({ question: q, history })
+			});
+			const json = await res.json().catch(() => ({}));
+			if (!res.ok) throw new Error(json?.detail || 'Assistant failed');
+			assistantMessages = [...assistantMessages, { role: 'assistant', content: json.answer || '', sources: json.sources || [] }];
+		} catch (e: any) {
+			toast.error(e?.message || 'Assistant failed');
+		} finally {
+			assistantLoading = false;
+		}
+	}
 
 	function toggleTheme() {
 		theme = theme === 'light' ? 'dark' : 'light';
@@ -81,7 +113,7 @@
 				toast.error(loginError);
 			}
 		} catch (err: any) {
-			loginError = 'Connection error. Please try again.';
+			loginError = `Connection error — API not reachable at ${getApiBase()}.`;
 			toast.error(loginError);
 		} finally {
 			loading = false;
@@ -124,13 +156,6 @@
 			{:else if !isLogin}
 				<!-- Fallback if user somehow got to signup page when disabled -->
 				{ (isLogin = true, '') }
-			{/if}
-
-			{#if authState.signupDisabled && isLogin}
-				<div class="signup-disabled-banner">
-					<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" class="banner-icon"><circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/></svg>
-					<span>Signups are disabled for this instance</span>
-				</div>
 			{/if}
 
 			<form onsubmit={handleSubmit} class="auth-form">
@@ -188,11 +213,19 @@
 					</a>
 					<a href="/contracts" class="nav-item {$page.url.pathname === '/contracts' ? 'active' : ''}">
 						<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="16" y1="13" x2="8" y2="13"/><line x1="16" y1="17" x2="8" y2="17"/><polyline points="10 9 9 9 8 9"/></svg>
-						All Contracts
+						Contract Repository
 					</a>
 					<a href="/risk" class="nav-item {$page.url.pathname === '/risk' ? 'active' : ''}">
 						<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"/><line x1="12" y1="9" x2="12" y2="13"/><line x1="12" y1="17" x2="12.01" y2="17"/></svg>
 						Risk Inbox
+					</a>
+					<a href="/calendar" class="nav-item {$page.url.pathname === '/calendar' ? 'active' : ''}">
+						<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="4" width="18" height="18" rx="2"/><line x1="16" y1="2" x2="16" y2="6"/><line x1="8" y1="2" x2="8" y2="6"/><line x1="3" y1="10" x2="21" y2="10"/></svg>
+						Calendar
+					</a>
+					<a href="/vendors" class="nav-item {$page.url.pathname === '/vendors' ? 'active' : ''}">
+						<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 7l9-4 9 4-9 4-9-4z"/><path d="M3 17l9 4 9-4"/><path d="M3 12l9 4 9-4"/></svg>
+						Vendors
 					</a>
 				</div>
 				
@@ -232,6 +265,74 @@
 			{@render children()}
 		</main>
 	</div>
+
+	{#if $navigating}
+		<div class="nav-loading-bar"></div>
+	{/if}
+
+	<!-- Bottom-left assistant -->
+	<button class="assistant-fab" type="button" onclick={() => (assistantOpen = !assistantOpen)} aria-label="Open assistant">
+		<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15a4 4 0 0 1-4 4H7l-4 4V7a4 4 0 0 1 4-4h10a4 4 0 0 1 4 4z"/></svg>
+	</button>
+
+	{#if assistantOpen}
+		<div class="assistant-panel panel">
+			<div class="assistant-head flex-between">
+				<div>
+					<div class="flex-row gap-8">
+						<div class="assistant-title">Sage</div>
+						<span class="ai-badge" title="Generated by AI. Verify against contract text.">
+							<svg class="ai-icon" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 2l1.2 4.3L18 8l-4.8 1.7L12 14l-1.2-4.3L6 8l4.8-1.7L12 2z"/></svg>
+							AI
+						</span>
+					</div>
+					<div class="text-tertiary" style="font-size: 12px;">Search clauses + get answers</div>
+				</div>
+				<button class="btn btn-secondary btn-compact" type="button" onclick={() => (assistantOpen = false)}>Close</button>
+			</div>
+
+			<div class="assistant-body">
+				{#if assistantMessages.length === 0}
+					<div class="assistant-empty text-tertiary">
+						Try: “Find MFN clauses” or “What are our termination notice obligations across vendors?”
+					</div>
+				{:else}
+					{#each assistantMessages as m, idx (idx)}
+						<div class="assistant-msg {m.role}">
+							<div class="assistant-bubble">
+								<div class="assistant-role">{m.role === 'user' ? 'You' : 'Sage'}</div>
+								{#if m.role === 'assistant'}
+									<div class="ai-chip" style="margin-bottom: 8px;" title="This response was generated by AI.">
+										<svg class="ai-icon" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 2l1.2 4.3L18 8l-4.8 1.7L12 14l-1.2-4.3L6 8l4.8-1.7L12 2z"/></svg>
+										AI answer
+									</div>
+								{/if}
+								<div class="assistant-content">{m.content}</div>
+							</div>
+						</div>
+					{/each}
+				{/if}
+			</div>
+
+			<div class="assistant-compose">
+				<textarea
+					class="assistant-textarea"
+					rows="1"
+					placeholder="Ask Sage…"
+					bind:value={assistantInput}
+					disabled={assistantLoading}
+					onkeydown={(e) => { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); sendAssistant(); } }}
+				></textarea>
+				<button class="btn btn-primary assistant-send" type="button" onclick={sendAssistant} disabled={assistantLoading || !assistantInput.trim()} aria-label="Send">
+					{#if assistantLoading}
+						<span class="spinner spinner-sm"></span>
+					{:else}
+						<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M22 2L11 13"/><path d="M22 2l-7 20-4-9-9-4z"/></svg>
+					{/if}
+				</button>
+			</div>
+		</div>
+	{/if}
 
 	<!-- Toast Container -->
 	<div class="toast-viewport">
@@ -307,6 +408,136 @@
 		overflow: hidden;
 	}
 
+	.nav-loading-bar {
+		position: fixed;
+		left: 240px;
+		right: 0;
+		top: 0;
+		height: 2px;
+		background: linear-gradient(90deg, rgba(88,166,255,0.0), rgba(88,166,255,0.9), rgba(88,166,255,0.0));
+		animation: shimmer 800ms linear infinite;
+		z-index: 120;
+	}
+	@keyframes shimmer {
+		0% { transform: translateX(-30%); }
+		100% { transform: translateX(30%); }
+	}
+
+	.assistant-fab {
+		position: fixed;
+		right: 16px;
+		bottom: 18px;
+		width: 44px;
+		height: 44px;
+		border-radius: 999px;
+		border: 1px solid var(--border-subtle);
+		background: var(--bg-panel);
+		color: var(--text-primary);
+		box-shadow: var(--shadow-premium);
+		display: inline-flex;
+		align-items: center;
+		justify-content: center;
+		cursor: pointer;
+		z-index: 150;
+	}
+	.assistant-fab:hover {
+		background: var(--bg-active);
+		border-color: var(--border-strong);
+	}
+	.assistant-panel {
+		position: fixed;
+		right: 16px;
+		bottom: 70px;
+		width: 380px;
+		max-width: calc(100vw - 32px);
+		height: 520px;
+		max-height: calc(100vh - 120px);
+		display: flex;
+		flex-direction: column;
+		padding: 0;
+		overflow: hidden;
+		z-index: 160;
+	}
+	.assistant-head {
+		padding: 12px 12px;
+		border-bottom: 1px solid var(--border-subtle);
+	}
+	.assistant-title {
+		font-weight: 700;
+	}
+	.assistant-body {
+		flex: 1;
+		overflow: auto;
+		padding: 12px;
+		background: var(--bg-app);
+	}
+	.assistant-empty {
+		padding: 18px 10px;
+		font-size: 12px;
+	}
+	.assistant-msg {
+		display: flex;
+		margin-bottom: 10px;
+	}
+	.assistant-msg.user {
+		justify-content: flex-end;
+	}
+	.assistant-bubble {
+		max-width: 92%;
+		padding: 10px 12px;
+		border: 1px solid var(--border-subtle);
+		border-radius: 12px;
+		background: var(--bg-panel);
+	}
+	.assistant-msg.user .assistant-bubble {
+		background: rgba(88, 166, 255, 0.06);
+		border-color: rgba(88, 166, 255, 0.22);
+	}
+	.assistant-role {
+		font-size: 11px;
+		color: var(--text-tertiary);
+		margin-bottom: 6px;
+	}
+	.assistant-content {
+		white-space: pre-wrap;
+		line-height: 1.35;
+	}
+	.assistant-compose {
+		display: grid;
+		grid-template-columns: 1fr auto;
+		gap: 10px;
+		padding: 10px 12px;
+		border-top: 1px solid var(--border-subtle);
+		background: var(--bg-panel);
+		align-items: end;
+	}
+	.assistant-textarea {
+		width: 100%;
+		resize: none;
+		min-height: 40px;
+		max-height: 140px;
+		padding: 10px 12px;
+		background: var(--bg-app);
+		border: 1px solid var(--border-subtle);
+		border-radius: 10px;
+		color: var(--text-primary);
+		font-size: 13px;
+		line-height: 1.35;
+		outline: none;
+	}
+	.assistant-textarea:focus {
+		border-color: var(--text-secondary);
+	}
+	.assistant-send {
+		height: 40px;
+		width: 42px;
+		display: inline-flex;
+		align-items: center;
+		justify-content: center;
+		padding: 0;
+		border-radius: 10px;
+	}
+
 	.sidebar {
 		width: 240px;
 		background: var(--bg-sidebar);
@@ -332,7 +563,7 @@
 		width: 24px;
 		height: 24px;
 		background: var(--accent-primary);
-		color: white;
+		color: var(--text-on-accent);
 		border-radius: 4px;
 		display: flex;
 		align-items: center;
@@ -387,7 +618,7 @@
 	}
 
 	.nav-item:active {
-		transform: scale(0.965);
+		transform: scale(0.98);
 	}
 
 	.nav-item.active {
@@ -409,8 +640,6 @@
 	.main-content {
 		flex: 1;
 		background: var(--bg-app);
-		background-image: radial-gradient(var(--dot-color) 1px, transparent 1px);
-		background-size: 20px 20px;
 		overflow-y: auto;
 		display: flex;
 		flex-direction: column;
@@ -493,25 +722,7 @@
 	.auth-tab.active {
 		background: var(--bg-hover);
 		color: var(--text-primary);
-		box-shadow: 0 1px 2px rgba(0,0,0,0.2);
-	}
-
-	.signup-disabled-banner {
-		display: flex;
-		align-items: center;
-		gap: 8px;
-		background: rgba(210, 153, 34, 0.08);
-		border: 1px solid rgba(210, 153, 34, 0.2);
-		border-radius: 6px;
-		padding: 10px 12px;
-		margin-bottom: 24px;
-		color: #d29922;
-		font-size: 12px;
-		font-weight: 500;
-	}
-
-	.banner-icon {
-		flex-shrink: 0;
+		box-shadow: var(--shadow-sm);
 	}
 
 	.form-group {
@@ -539,7 +750,8 @@
 	}
 
 	.input-field:focus {
-		border-color: var(--text-secondary);
+		border-color: var(--accent-primary);
+		box-shadow: 0 0 0 3px rgba(var(--accent-primary-rgb), 0.12);
 	}
 
 	.btn-block {
@@ -547,7 +759,7 @@
 	}
 
 	.error-msg {
-		color: #e5484d;
+		color: var(--color-critical);
 		font-size: 12px;
 		margin-top: 8px;
 		text-align: center;

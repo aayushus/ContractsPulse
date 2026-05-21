@@ -1,0 +1,44 @@
+PROFESSIONAL SERVICES AGREEMENT (REDLINED)
+
+This Professional Services Agreement (“Agreement”) is entered into as of May 20, 2026 (“Effective Date”) by and between:
+
+Customer: Acme Manufacturing, Inc., a Delaware corporation (“Customer”)
+Vendor: Brightline Consulting LLC, a New York limited liability company (“Vendor”)
+
+1. SCOPE OF SERVICES
+Vendor will provide the services described in Exhibit A (“Services”). Customer may request additional services by written change order.
+
+2. TERM
+The initial term of this Agreement begins on the Effective Date and continues for twelve (12) months (the “Initial Term”), unless earlier terminated as provided herein. This Agreement shall automatically renew for successive one (1) year terms unless either party provides written notice of non-renewal at least thirty (30) days prior to the end of the then-current term.
+
+3. FEES AND PAYMENT
+Customer will pay Vendor the fees set forth in Exhibit B. All invoices are due net fifteen (15) days from invoice date. Past due amounts accrue interest at 1.5% per month (or the maximum allowed by law, if lower).
+
+4. CONFIDENTIALITY
+Each party may receive Confidential Information of the other. The receiving party will protect Confidential Information using at least reasonable care and will not disclose it to any third party except as required to perform under this Agreement. Confidentiality obligations will continue for three (3) years after termination.
+
+5. INTELLECTUAL PROPERTY (REVISED)
+<<DELETE>> All work product, inventions, discoveries, developments, processes, documentation, and materials created, conceived, or reduced to practice by Vendor (alone or with others) during the term of this Agreement, whether or not related to the Services (collectively, “Work Product”), shall be the exclusive property of Customer. <<END DELETE>>
+<<INSERT>> As between the parties, Vendor retains all right, title, and interest in and to Vendor’s pre-existing materials, tools, templates, know-how, and generalized skills (“Vendor Materials”). Upon full payment of applicable fees, Vendor grants Customer a perpetual, worldwide, non-exclusive, royalty-free license to use, reproduce, and internally modify the deliverables specifically created for Customer under the Services (“Deliverables”) for Customer’s internal business purposes. To the extent any Vendor Materials are included in the Deliverables, Vendor grants Customer a non-exclusive license to use such Vendor Materials solely as part of the Deliverables. <<END INSERT>>
+
+6. LIMITATION OF LIABILITY (REVISED)
+<<DELETE>> CUSTOMER’S TOTAL LIABILITY UNDER THIS AGREEMENT WILL NOT EXCEED THE AMOUNTS PAID BY CUSTOMER UNDER THIS AGREEMENT IN THE THREE (3) MONTHS PRECEDING THE EVENT GIVING RISE TO THE CLAIM. <<END DELETE>>
+<<INSERT>> EXCEPT FOR (A) A PARTY’S GROSS NEGLIGENCE OR WILLFUL MISCONDUCT, (B) A PARTY’S INDEMNIFICATION OBLIGATIONS UNDER SECTION 7, OR (C) A PARTY’S BREACH OF SECTION 4 (CONFIDENTIALITY), IN NO EVENT WILL EITHER PARTY’S TOTAL AGGREGATE LIABILITY UNDER THIS AGREEMENT EXCEED THE TOTAL FEES PAID OR PAYABLE BY CUSTOMER TO VENDOR UNDER THIS AGREEMENT IN THE TWELVE (12) MONTHS PRECEDING THE EVENT GIVING RISE TO THE CLAIM. <<END INSERT>>
+
+7. INDEMNIFICATION (REVISED)
+<<DELETE>> Vendor will indemnify, defend, and hold harmless Customer from and against any third-party claims, damages, losses, liabilities, costs, and expenses (including reasonable attorneys’ fees) arising out of or relating to (a) Vendor’s breach of this Agreement, (b) Vendor’s negligence or willful misconduct, or (c) any allegation that the Services or deliverables infringe any intellectual property right. Vendor’s indemnification obligations are uncapped. <<END DELETE>>
+<<INSERT>> Each party (the “Indemnifying Party”) will indemnify, defend, and hold harmless the other party and its officers, directors, and employees (the “Indemnified Party”) from and against any third-party claims, damages, losses, liabilities, costs, and expenses (including reasonable attorneys’ fees) arising out of the Indemnifying Party’s (a) gross negligence or willful misconduct, or (b) material breach of this Agreement. Vendor will additionally indemnify the Indemnified Party from and against third-party claims that the Deliverables, as provided by Vendor and used in accordance with this Agreement, infringe a U.S. patent, copyright, or trademark, provided that Customer promptly notifies Vendor and allows Vendor to control the defense and settlement. In no event will Vendor be responsible for claims arising from Customer materials, specifications, or modifications not made by Vendor. Indemnification obligations are subject to the limitation of liability in Section 6, except to the extent prohibited by law. <<END INSERT>>
+
+8. TERMINATION (REVISED)
+<<DELETE>> Customer may terminate this Agreement for convenience upon ten (10) days’ prior written notice. Vendor may terminate only for Customer’s material breach that remains uncured for thirty (30) days following written notice. <<END DELETE>>
+<<INSERT>> Either party may terminate this Agreement for convenience upon thirty (30) days’ prior written notice to the other party. Either party may terminate this Agreement for the other party’s material breach if such breach remains uncured thirty (30) days after written notice. Upon termination for convenience by Customer, Customer will pay Vendor for Services performed and non-cancellable committed costs incurred through the effective date of termination. <<END INSERT>>
+
+9. GOVERNING LAW
+This Agreement will be governed by the laws of the State of New York, without regard to conflict of laws rules. Any disputes will be resolved exclusively in the state or federal courts located in New York County, New York.
+
+EXHIBIT A
+Description of Services: Vendor will provide procurement analytics consulting and contract review support.
+
+EXHIBIT B
+Fees: $25,000 per month, billed monthly in arrears.
+

@@ -3,7 +3,9 @@
 	import { goto } from '$app/navigation';
 	import { apiFetch } from '$lib/api';
 	import { toast } from '$lib/toastStore';
-	import { premiumCard } from '$lib/actions';
+	let { data } = $props();
+	// In dev hydration / fast refresh, `data` can briefly be undefined.
+	const initialContracts = (data && (data as any).contracts) ? (data as any).contracts : [];
 
 	type ContractSummary = {
 		id: string;
@@ -14,8 +16,8 @@
 		created_at: string;
 	};
 
-	let contracts: ContractSummary[] = $state([]);
-	let isLoading = $state(true);
+	let contracts: ContractSummary[] = $state(initialContracts || []);
+	let isLoading = $state(false);
 	let isUploading = $state(false);
 	let fileInput: HTMLInputElement;
 	let pollInterval: any;
@@ -32,18 +34,69 @@
 	let pasteModalOpen = $state(false);
 	let pastedText = $state('');
 
-	// Stats
-	let totalCount = $derived(contracts.length);
-	let queueCount = $derived(contracts.filter(c => c.status === 'PROCESSING').length);
-	let completedCount = $derived(contracts.filter(c => c.status === 'COMPLETED').length);
+	function groupLatestContracts(all: ContractSummary[]): ContractSummary[] {
+		if (!all || all.length === 0) return [];
+		const byId = new Map<string, ContractSummary>();
+		for (const c of all) byId.set(c.id, c);
+
+		function rootIdOf(c: ContractSummary): string {
+			let cur: ContractSummary | undefined = c;
+			let guard = 0;
+			while (cur?.metadata_json?.parent_contract_id && guard < 20) {
+				const parent = byId.get(cur.metadata_json.parent_contract_id);
+				if (!parent) break;
+				cur = parent;
+				guard += 1;
+			}
+			return cur?.id || c.id;
+		}
+
+		const groups = new Map<string, ContractSummary[]>();
+		for (const c of all) {
+			const rootId = rootIdOf(c);
+			const arr = groups.get(rootId) || [];
+			arr.push(c);
+			groups.set(rootId, arr);
+		}
+
+		const latest: ContractSummary[] = [];
+		for (const [rootId, arr] of groups.entries()) {
+			const sorted = [...arr].sort((a, b) => {
+				const av = Number(a.metadata_json?.version_number || 1);
+				const bv = Number(b.metadata_json?.version_number || 1);
+				if (bv !== av) return bv - av;
+				return new Date(b.created_at).getTime() - new Date(a.created_at).getTime();
+			});
+			const head = sorted[0];
+			// Attach version metadata for display (do not mutate reactive objects)
+			const enriched = {
+				...head,
+				__version_count: sorted.length,
+				__latest_version: Number(head.metadata_json?.version_number || sorted.length || 1),
+				__root_contract_id: rootId
+			} as any;
+			latest.push(enriched);
+		}
+
+		// Preserve newest-first ordering at the portfolio level
+		latest.sort((a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime());
+		return latest;
+	}
+
+	let latestContracts = $derived(groupLatestContracts(contracts));
+
+	// Stats (use latest only, so revisions don't double-count)
+	let totalCount = $derived(latestContracts.length);
+	let queueCount = $derived(latestContracts.filter(c => c.status === 'PROCESSING').length);
+	let completedCount = $derived(latestContracts.filter(c => c.status === 'COMPLETED').length);
 	
 	let riskyCount = $derived(
-		contracts.filter(c => c.status === 'COMPLETED' && (c.overall_risk === 'CRITICAL' || c.overall_risk === 'HIGH')).length
+		latestContracts.filter(c => c.status === 'COMPLETED' && (c.overall_risk === 'CRITICAL' || c.overall_risk === 'HIGH')).length
 	);
 	let riskyRate = $derived(completedCount > 0 ? ((riskyCount / completedCount) * 100).toFixed(0) + '%' : '0%');
 	
 	let totalObligationsCount = $derived(
-		(contracts as any[]).reduce((sum, c: any) => {
+		(latestContracts as any[]).reduce((sum, c: any) => {
 			const counts = c.metadata_json?.risk_counts || {};
 			return sum + Object.values(counts).reduce((a: any, b: any) => a + Number(b), 0);
 		}, 0)
@@ -51,7 +104,7 @@
 
 	// Derived filtered contracts
 	let filteredContracts = $derived(
-		contracts.filter(c => {
+		latestContracts.filter(c => {
 			const matchesSearch = c.filename.toLowerCase().includes(searchQuery.toLowerCase());
 			const matchesStatus = statusFilter === 'ALL' || c.status === statusFilter;
 			
@@ -222,7 +275,8 @@
 	onMount(() => {
 		const u = new URL(window.location.href);
 		apiBase = `${u.protocol}//${u.hostname}:9432`;
-		fetchContracts();
+		// Load already populated via `+page.ts`, but keep a fast refresh + polling.
+		fetchContracts(true);
 		pollInterval = setInterval(() => fetchContracts(true), 3000);
 	});
 
@@ -236,8 +290,8 @@
 		<div>
 			<div class="breadcrumbs">
 				<span class="crumb">ContractsPulse</span>
-				<span class="separator">/</span>
-				<span class="crumb active">All Contracts</span>
+				<span class="separator">›</span>
+				<span class="crumb active">Contract Repository</span>
 			</div>
 			<div class="header-content">
 				<h1>Contracts Portfolio</h1>
@@ -262,7 +316,8 @@
 				{/if}
 			</button>
 			<button class="btn btn-secondary" onclick={() => pasteModalOpen = true} disabled={isUploading}>
-				Paste Text
+				<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="16" y1="13" x2="8" y2="13"/><line x1="16" y1="17" x2="8" y2="17"/><polyline points="10 9 9 9 8 9"/></svg>
+				Paste contract text
 			</button>
 		</div>
 	</div>
@@ -271,19 +326,19 @@
 <div class="page-content">
 	<!-- Glassmorphic Portfolio Metrics Grid -->
 	<div class="metric-row">
-		<div class="metric-card panel bg-glass-card" use:premiumCard>
+		<div class="metric-card panel bg-glass-card">
 			<div class="metric-label">Total Documents</div>
 			<div class="metric-value text-primary">{totalCount}</div>
 		</div>
-		<div class="metric-card panel bg-glass-card" use:premiumCard={{ color: 'var(--color-medium)' }}>
+		<div class="metric-card panel bg-glass-card">
 			<div class="metric-label">Processing Queue</div>
 			<div class="metric-value" class:text-warning={queueCount > 0} class:text-tertiary={queueCount === 0}>{queueCount}</div>
 		</div>
-		<div class="metric-card panel bg-glass-card" use:premiumCard={{ color: 'var(--color-critical)' }}>
+		<div class="metric-card panel bg-glass-card">
 			<div class="metric-label">Vulnerability Rate</div>
 			<div class="metric-value" class:text-danger={riskyCount > 0} class:text-primary={riskyCount === 0}>{riskyRate}</div>
 		</div>
-		<div class="metric-card panel bg-glass-card" use:premiumCard={{ color: 'var(--accent-primary)' }}>
+		<div class="metric-card panel bg-glass-card">
 			<div class="metric-label">Obligations Analyzed</div>
 			<div class="metric-value text-secondary">{totalObligationsCount}</div>
 		</div>
@@ -332,6 +387,7 @@
 	<div class="data-table panel">
 		<div class="table-header">
 			<div class="col col-name">Document</div>
+			<div class="col col-vendor">Vendor</div>
 			<div class="col col-status">Status</div>
 			<div class="col col-risk">Severity Bar</div>
 			<div class="col col-date">Uploaded</div>
@@ -339,9 +395,16 @@
 		</div>
 
 		{#if isLoading}
-			<div class="table-row empty-row">
-				<span class="spinner spinner-md"></span> Loading contract list...
-			</div>
+			{#each Array(6) as _, i (i)}
+				<div class="table-row">
+					<div class="col col-name"><div class="skeleton" style="height: 14px; width: 70%;"></div></div>
+					<div class="col col-vendor"><div class="skeleton" style="height: 14px; width: 60%;"></div></div>
+					<div class="col col-status"><div class="skeleton" style="height: 14px; width: 50%;"></div></div>
+					<div class="col col-risk"><div class="skeleton" style="height: 10px; width: 120px;"></div></div>
+					<div class="col col-date"><div class="skeleton" style="height: 14px; width: 70px; margin-left: auto;"></div></div>
+					<div class="col col-actions"><div class="skeleton" style="height: 14px; width: 22px; margin-left: auto;"></div></div>
+				</div>
+			{/each}
 		{:else if filteredContracts.length === 0}
 			<div class="table-row empty-row">
 				No contracts found matching filter criteria.
@@ -358,9 +421,17 @@
 				}
 			}}>
 				<!-- Name column -->
-				<div class="col col-name">
-					<svg class="file-icon" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="margin-right: 10px; display: inline-block; vertical-align: middle;"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/></svg>
-					<span class="file-name-text font-semibold">{contract.filename}</span>
+				<div class="col col-name" style="min-width: 0;">
+					<svg class="file-icon" style="flex-shrink: 0;" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/></svg>
+					<span class="filename-text font-semibold" title={contract.filename}>{contract.filename}</span>
+					{#if (contract as any).__version_count && (contract as any).__version_count > 1}
+						<span class="version-pill" title="This contract has {(contract as any).__version_count} versions">v{(contract as any).__latest_version}</span>
+					{/if}
+				</div>
+
+				<!-- Vendor -->
+				<div class="col col-vendor" title={contract.metadata_json?.company || ''}>
+					<span class="vendor-text">{contract.metadata_json?.company || '—'}</span>
 				</div>
 
 				<!-- Status Badge -->
@@ -397,9 +468,24 @@
 									{#if low > 0}<div class="r-seg r-seg-low" style="flex: {low}"></div>{/if}
 								</div>
 								<div class="risk-density-counts text-tertiary">
-									{#if crit > 0}<span class="cnt-badge text-critical">{crit}c</span>{/if}
-									{#if high > 0}<span class="cnt-badge text-high">{high}h</span>{/if}
-									{#if med > 0}<span class="cnt-badge text-medium">{med}m</span>{/if}
+									{#if crit > 0}
+										<span class="severity-chip text-critical" title="Critical clauses: {crit}">
+											<span class="sev-dot sev-critical"></span>
+											{crit}
+										</span>
+									{/if}
+									{#if high > 0}
+										<span class="severity-chip text-high" title="High clauses: {high}">
+											<span class="sev-dot sev-high"></span>
+											{high}
+										</span>
+									{/if}
+									{#if med > 0}
+										<span class="severity-chip text-medium" title="Medium clauses: {med}">
+											<span class="sev-dot sev-medium"></span>
+											{med}
+										</span>
+									{/if}
 								</div>
 							</div>
 						{:else}
@@ -526,6 +612,20 @@
 		gap: 8px;
 	}
 
+	.version-pill {
+		display: inline-flex;
+		align-items: center;
+		height: 20px;
+		padding: 0 8px;
+		border-radius: 999px;
+		border: 1px solid var(--border-subtle);
+		background: var(--bg-panel);
+		color: var(--text-secondary);
+		font-size: 11px;
+		font-weight: 650;
+		white-space: nowrap;
+	}
+
 	.page-content {
 		padding: 32px 40px;
 		max-width: 1200px;
@@ -546,21 +646,17 @@
 		background: var(--bg-glass-card);
 		border: 1px solid var(--border-glass);
 		border-radius: 8px;
-		cursor: pointer;
 		transition: border-color 220ms var(--ease-spring-gentle), 
 		            transform 200ms var(--ease-spring-gentle), 
 		            box-shadow 220ms var(--ease-spring-gentle);
 	}
 
 	.metric-card:hover {
-		transform: translateY(-2px);
 		border-color: var(--border-glass-hover);
 		box-shadow: var(--shadow-premium);
 	}
 
-	.metric-card:active {
-		transform: translateY(-1px) scale(0.98);
-	}
+
 
 	.metric-label {
 		font-size: 11px;
@@ -637,9 +733,9 @@
 		font-size: 11px;
 		font-weight: 500;
 		padding: 4px 10px;
-		border-radius: 99px;
+		border-radius: 6px;
 		cursor: pointer;
-		transition: all 150ms var(--ease-out);
+		transition: color 150ms var(--ease-out), background-color 150ms var(--ease-out), border-color 150ms var(--ease-out);
 	}
 
 	.filter-pill:hover {
@@ -654,26 +750,26 @@
 	}
 
 	.filter-pill-critical.active {
-		border-color: rgba(255, 59, 48, 0.4);
-		background: rgba(255, 59, 48, 0.08);
+		border-color: rgba(var(--color-critical-rgb), 0.4);
+		background: rgba(var(--color-critical-rgb), 0.08);
 		color: var(--color-critical);
 	}
 
 	.filter-pill-high.active {
-		border-color: rgba(248, 81, 73, 0.4);
-		background: rgba(248, 81, 73, 0.08);
+		border-color: rgba(var(--color-high-rgb), 0.4);
+		background: rgba(var(--color-high-rgb), 0.08);
 		color: var(--color-high);
 	}
 
 	.filter-pill-medium.active {
-		border-color: rgba(210, 153, 34, 0.4);
-		background: rgba(210, 153, 34, 0.08);
+		border-color: rgba(var(--color-medium-rgb), 0.4);
+		background: rgba(var(--color-medium-rgb), 0.08);
 		color: var(--color-medium);
 	}
 
 	.filter-pill-low.active {
-		border-color: rgba(63, 185, 80, 0.4);
-		background: rgba(63, 185, 80, 0.08);
+		border-color: rgba(var(--color-low-rgb), 0.4);
+		background: rgba(var(--color-low-rgb), 0.08);
 		color: var(--color-low);
 	}
 
@@ -697,10 +793,10 @@
 	.risk-density-bar {
 		display: flex;
 		height: 6px;
-		background: rgba(255, 255, 255, 0.04);
-		border-radius: 99px;
+		background: var(--bg-hover);
+		border-radius: 4px;
 		overflow: hidden;
-		border: 1px solid rgba(255, 255, 255, 0.02);
+		border: 1px solid var(--border-subtle);
 	}
 
 	.r-seg {
@@ -718,9 +814,27 @@
 		font-size: 10px;
 	}
 
-	.cnt-badge {
-		font-weight: 600;
+	.severity-chip {
+		display: inline-flex;
+		align-items: center;
+		gap: 6px;
+		padding: 2px 7px;
+		border-radius: 999px;
+		border: 1px solid var(--border-subtle);
+		background: var(--bg-panel);
+		font-size: 11px;
+		font-weight: 650;
+		color: var(--text-secondary);
 	}
+	.sev-dot {
+		width: 6px;
+		height: 6px;
+		border-radius: 999px;
+		display: inline-block;
+	}
+	.sev-critical { background: var(--color-critical); }
+	.sev-high { background: var(--color-high); }
+	.sev-medium { background: var(--color-medium); }
 
 	.btn-danger-action {
 		color: var(--text-tertiary);
@@ -728,7 +842,7 @@
 	}
 
 	.btn-danger-action:hover {
-		color: #f85149 !important;
+		color: var(--color-high) !important;
 	}
 
 	.empty-row {
@@ -747,6 +861,129 @@
 		.filters-layout {
 			grid-template-columns: 1fr;
 			gap: 16px;
+		}
+	}
+
+	/* Modal styles */
+	.modal-root {
+		position: fixed;
+		top: 0;
+		left: 0;
+		width: 100vw;
+		height: 100vh;
+		z-index: 1000;
+		display: flex;
+		align-items: center;
+		justify-content: center;
+		animation: fadeIn 200ms ease-out forwards;
+	}
+
+	.modal-backdrop {
+		position: absolute;
+		inset: 0;
+		background: rgba(0, 0, 0, 0.6);
+		backdrop-filter: blur(4px);
+		border: none;
+		padding: 0;
+		margin: 0;
+		cursor: pointer;
+	}
+
+	.modal-content {
+		background: var(--bg-panel);
+		border: 1px solid var(--border-subtle);
+		border-radius: 12px;
+		width: 100%;
+		max-width: 440px;
+		box-shadow: var(--shadow-lg);
+		transform: scale(0.95);
+		opacity: 0;
+		animation: modalIn 200ms cubic-bezier(0.23, 1, 0.32, 1) forwards;
+		position: relative;
+		z-index: 1;
+	}
+
+	.modal-content-wide { max-width: 720px; }
+
+	.modal-header {
+		padding: 24px 24px 16px;
+		display: flex;
+		align-items: center;
+		gap: 16px;
+	}
+
+	.modal-header h3 {
+		margin: 0;
+		font-size: 18px;
+		font-weight: 600;
+		color: var(--text-primary);
+	}
+
+	.modal-icon.warning {
+		width: 40px;
+		height: 40px;
+		border-radius: 50%;
+		background: rgba(var(--color-critical-rgb), 0.15);
+		color: var(--color-critical);
+		display: flex;
+		align-items: center;
+		justify-content: center;
+	}
+
+	.modal-icon.info {
+		width: 40px;
+		height: 40px;
+		border-radius: 50%;
+		background: rgba(var(--accent-primary-rgb), 0.15);
+		color: var(--accent-primary);
+		display: flex;
+		align-items: center;
+		justify-content: center;
+	}
+
+	.modal-body {
+		padding: 0 24px 24px;
+		color: var(--text-secondary);
+		font-size: 14px;
+		line-height: 1.5;
+	}
+
+	.modal-body p { margin: 0; }
+	.modal-help { margin-bottom: 12px; }
+
+	.mono-textarea {
+		width: 100%;
+		resize: vertical;
+		font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace;
+		min-height: 220px;
+	}
+
+	.modal-footer {
+		padding: 16px 24px;
+		border-top: 1px solid var(--border-subtle);
+		background: var(--bg-panel);
+		border-radius: 0 0 12px 12px;
+	}
+
+	.btn-danger {
+		background: var(--color-critical);
+		color: var(--text-on-accent);
+		border: 1px solid var(--color-critical);
+	}
+
+	.btn-danger:hover {
+		opacity: 0.9;
+	}
+
+	@keyframes fadeIn {
+		from { opacity: 0; }
+		to { opacity: 1; }
+	}
+
+	@keyframes modalIn {
+		to {
+			transform: scale(1);
+			opacity: 1;
 		}
 	}
 </style>

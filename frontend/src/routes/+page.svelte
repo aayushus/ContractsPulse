@@ -3,7 +3,6 @@
 	import { goto } from '$app/navigation';
 	import { toast } from '$lib/toastStore';
 	import { apiFetch } from '$lib/api';
-	import { premiumCard } from '$lib/actions';
 
 	type ContractSummary = {
 		id: string;
@@ -14,28 +13,12 @@
 		created_at: string;
 	};
 
-	type Clause = {
-		id: string;
-		clause_type: string;
-		text_content: string;
-		risk_level: string;
-		risk_reasoning?: string | null;
-		redline_suggestion?: string | null;
-		risk_debug_json?: any;
-	};
-
-	let fileInput: HTMLInputElement;
-	let isUploading = $state(false);
-	let pasteModalOpen = $state(false);
-	let pastedText = $state('');
 	
 	let contracts: ContractSummary[] = $state([]);
 	let pollInterval: any;
 	
 	// Track which contracts were previously in PROCESSING state
 	let processingIds = new Set<string>();
-
-	let apiBase = $state('http://localhost:9432');
 
 	async function fetchContracts() {
 		try {
@@ -64,10 +47,6 @@
 	}
 
 	onMount(() => {
-		// If the UI is accessed via a LAN IP/hostname, avoid "localhost" which points at the viewer's machine.
-		const u = new URL(window.location.href);
-		apiBase = `${u.protocol}//${u.hostname}:9432`;
-
 		fetchContracts();
 		pollInterval = setInterval(fetchContracts, 3000);
 	});
@@ -76,131 +55,103 @@
 		if (pollInterval) clearInterval(pollInterval);
 	});
 
-	function triggerUpload() {
-		if (fileInput) fileInput.click();
-	}
 
 
+	// -------------------------------------------------------------
+	// Executive KPI Metrics Calculation (Svelte 5 Derived Runes)
+	// -------------------------------------------------------------
+	let totalContracts = $derived(contracts.length);
+	
+	let allRiskCounts = $derived.by(() => {
+		let critical = 0;
+		let high = 0;
+		let medium = 0;
+		let low = 0;
+		contracts.forEach(c => {
+			if (c.status !== 'COMPLETED') return;
+			const rc = c.metadata_json?.risk_counts || {};
+			critical += Number(rc.CRITICAL || 0);
+			high += Number(rc.HIGH || 0);
+			medium += Number(rc.MEDIUM || 0);
+			low += Number(rc.LOW || 0);
+		});
+		return { critical, high, medium, low };
+	});
 
-	async function handlePasteAnalyze() {
-		const text = (pastedText || '').trim();
-		if (!text) {
-			toast.error('Paste contract text first.');
-			return;
-		}
+	let totalObligations = $derived(
+		allRiskCounts.critical + allRiskCounts.high + allRiskCounts.medium + allRiskCounts.low
+	);
 
-		isUploading = true;
-		const loadingToastId = toast.loading('Submitting text for analysis...');
-		try {
-			const response = await apiFetch('/api/v1/contracts/text', {
-				method: 'POST',
-				headers: { 'Content-Type': 'application/json' },
-				body: JSON.stringify({ text })
+	let portfolioHealthIndex = $derived.by(() => {
+		if (totalObligations === 0) return 100;
+		const rawScore = 100 - ((10 * allRiskCounts.critical + 5 * allRiskCounts.high + 2 * allRiskCounts.medium) / totalObligations) * 10;
+		return Math.max(0, Math.min(100, Math.round(rawScore)));
+	});
+
+	let vulnerabilityConcentration = $derived.by(() => {
+		const completed = contracts.filter(c => c.status === 'COMPLETED');
+		if (completed.length === 0) return 0;
+		const vulnerable = completed.filter(c => {
+			const rc = c.metadata_json?.risk_counts || {};
+			return Number(rc.CRITICAL || 0) > 0 || Number(rc.HIGH || 0) > 0;
+		});
+		return Math.round((vulnerable.length / completed.length) * 100);
+	});
+
+	let processingContracts = $derived(contracts.filter(c => c.status === 'PROCESSING'));
+
+	let topExposureVectors = $derived.by(() => {
+		const counts: Record<string, { critical: number; high: number; total: number }> = {};
+		contracts.forEach(c => {
+			if (c.status !== 'COMPLETED') return;
+			const topRisks = c.metadata_json?.top_risks || [];
+			topRisks.forEach((r: any) => {
+				const type = r.clause_type || 'Other';
+				if (!counts[type]) {
+					counts[type] = { critical: 0, high: 0, total: 0 };
+				}
+				if (r.risk_level === 'CRITICAL') counts[type].critical++;
+				else if (r.risk_level === 'HIGH') counts[type].high++;
+				counts[type].total++;
 			});
+		});
 
-			if (response.ok) {
-				toast.dismiss(loadingToastId);
-				toast.success('Text submitted. AI processing started.');
-				pasteModalOpen = false;
-				pastedText = '';
-				await fetchContracts();
-			} else {
-				const err = await response.json().catch(() => ({}));
-				throw new Error(err?.detail || 'Submit failed');
-			}
-		} catch (error) {
-			console.error('Paste analyze error:', error);
-			toast.dismiss(loadingToastId);
-			toast.error('Failed to submit text for analysis.');
-		} finally {
-			isUploading = false;
-		}
-	}
+		return Object.entries(counts)
+			.map(([type, score]) => ({
+				type,
+				critical: score.critical,
+				high: score.high,
+				total: score.total,
+				severityScore: score.critical * 10 + score.high * 5
+			}))
+			.sort((a, b) => b.severityScore - a.severityScore)
+			.slice(0, 5);
+	});
 
-	async function handleFileChange(event: Event) {
-		const target = event.target as HTMLInputElement;
-		if (!target.files || target.files.length === 0) return;
-		
-		const file = target.files[0];
-		isUploading = true;
-
-		const formData = new FormData();
-		formData.append('file', file);
-		
-		let loadingToastId = toast.loading(`Uploading ${file.name}...`);
-
-		try {
-			const response = await apiFetch('/api/v1/contracts/upload', {
-				method: 'POST',
-				body: formData
+	let recentCriticalTriggers = $derived.by(() => {
+		const triggers: any[] = [];
+		contracts.forEach(c => {
+			if (c.status !== 'COMPLETED') return;
+			const topRisks = c.metadata_json?.top_risks || [];
+			topRisks.forEach((r: any) => {
+				if (r.risk_level === 'HIGH' || r.risk_level === 'CRITICAL') {
+					triggers.push({
+						contractId: c.id,
+						filename: c.filename,
+						clause_type: r.clause_type,
+						risk_level: r.risk_level,
+						risk_reasoning: r.risk_reasoning,
+						text_excerpt: r.text_excerpt || r.risk_reasoning || '',
+						created_at: c.created_at
+					});
+				}
 			});
-			
-			if (response.ok) {
-				toast.dismiss(loadingToastId);
-				toast.success('Document uploaded. AI processing started.');
-				fetchContracts(); // Immediately fetch to show the new 'PROCESSING' row
-				isUploading = false;
-			} else {
-				throw new Error('Upload failed');
-			}
-		} catch (error) {
-			console.error("Upload error:", error);
-			toast.dismiss(loadingToastId);
-			toast.error('Failed to upload document.');
-			isUploading = false;
-		}
-	}
-
-	async function handleReprocess(contractId: string) {
-		const loadingToastId = toast.loading('Restarting AI pipeline...');
-		try {
-			const response = await apiFetch(`/api/v1/contracts/${contractId}/reprocess`, {
-				method: 'POST'
-			});
-			if (response.ok) {
-				toast.dismiss(loadingToastId);
-				toast.success('Reprocessing started.');
-				fetchContracts();
-			} else {
-				throw new Error('Reprocess failed');
-			}
-		} catch (error) {
-			toast.dismiss(loadingToastId);
-			toast.error('Failed to reprocess contract. (Need to re-upload)');
-		}
-	}
-
-	let deleteModalOpen = $state(false);
-	let contractToDelete = $state<string | null>(null);
-
-	function promptDelete(contractId: string) {
-		contractToDelete = contractId;
-		deleteModalOpen = true;
-	}
-
-	async function handleDelete() {
-		if (!contractToDelete) return;
-		const contractId = contractToDelete;
-		deleteModalOpen = false;
-		contractToDelete = null;
-		
-		const loadingToastId = toast.loading('Deleting contract...');
-		try {
-			const response = await apiFetch(`/api/v1/contracts/${contractId}`, {
-				method: 'DELETE'
-			});
-			if (response.ok) {
-				toast.dismiss(loadingToastId);
-				toast.success('Contract deleted.');
-				fetchContracts();
-			} else {
-				throw new Error('Delete failed');
-			}
-		} catch (error) {
-			toast.dismiss(loadingToastId);
-			toast.error('Failed to delete contract.');
-		}
-	}
+		});
+		// Sort chronologically descending
+		return triggers
+			.sort((a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime())
+			.slice(0, 5);
+	});
 
 	function getProcessingPhase(step: string | undefined | null) {
 		if (!step) return "Initializing";
@@ -230,987 +181,719 @@
 	<div class="page-header-inner">
 		<div class="breadcrumbs">
 			<span class="crumb">ContractsPulse</span>
-			<span class="separator">/</span>
+			<span class="separator">›</span>
 			<span class="crumb active">Dashboard</span>
 		</div>
 		
-		<div class="header-content flex-between">
-			<h1>Contract Overview</h1>
-			<div class="header-actions">
-				<input 
-					type="file" 
-					accept="application/pdf" 
-					bind:this={fileInput} 
-					onchange={handleFileChange} 
-					style="display: none;" 
-				/>
-				<button class="btn btn-primary" onclick={triggerUpload} disabled={isUploading}>
-					{#if isUploading}
-						<span class="spinner spinner-sm"></span> Uploading...
-					{:else}
-						<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="17 8 12 3 7 8"/><line x1="12" y1="3" x2="12" y2="15"/></svg>
-						Upload Contract
-					{/if}
-				</button>
-				<button class="btn btn-secondary" onclick={() => pasteModalOpen = true} disabled={isUploading}>
-					Paste Text
-				</button>
-			</div>
+		<div class="header-content">
+			<h1>Executive Risk Intelligence</h1>
 		</div>
 	</div>
 </header>
 
-<div class="page-content">
+<div class="page-content" id="dashboard-main-content">
+	<!-- Vercel-style premium executive KPI row -->
 	<div class="metric-row">
-		<div class="metric-card panel" use:premiumCard>
-			<div class="metric-label">Active Contracts</div>
-			<div class="metric-value">{contracts.length}</div>
+		<div class="metric-card panel" id="kpi-portfolio-health">
+			<div class="metric-label">Portfolio Health Index</div>
+			<div class="metric-value-container">
+				<div class="metric-value" class:text-success={portfolioHealthIndex >= 90} class:text-warning={portfolioHealthIndex >= 70 && portfolioHealthIndex < 90} class:text-danger={portfolioHealthIndex < 70}>
+					{portfolioHealthIndex}%
+				</div>
+				<span class="metric-trend" class:trend-up={portfolioHealthIndex >= 90} class:trend-warn={portfolioHealthIndex >= 70 && portfolioHealthIndex < 90} class:trend-down={portfolioHealthIndex < 70}>
+					{#if portfolioHealthIndex >= 90}
+						Healthy
+					{:else}
+						Action Needed
+					{/if}
+				</span>
+			</div>
+			<p class="metric-description">Risk-weighted score of obligations across repository</p>
 		</div>
-		<div class="metric-card panel" use:premiumCard={{ color: 'var(--color-critical)' }}>
-			<div class="metric-label">High Risk Clauses</div>
-			<div class="metric-value text-danger">{contracts.filter(c => c.overall_risk === 'HIGH' || c.overall_risk === 'CRITICAL').length}</div>
+
+		<div class="metric-card panel" id="kpi-vulnerability-ratio">
+			<div class="metric-label">Vulnerability Ratio</div>
+			<div class="metric-value-container">
+				<div class="metric-value" class:text-danger={vulnerabilityConcentration > 30} class:text-warning={vulnerabilityConcentration > 0 && vulnerabilityConcentration <= 30} class:text-success={vulnerabilityConcentration === 0}>
+					{vulnerabilityConcentration}%
+				</div>
+				<span class="metric-trend" class:trend-down={vulnerabilityConcentration > 30} class:trend-up={vulnerabilityConcentration === 0}>
+					{#if vulnerabilityConcentration > 0}
+						Liable
+					{:else}
+						Fully Shielded
+					{/if}
+				</span>
+			</div>
+			<p class="metric-description">% of contracts with High or Critical risk factors</p>
 		</div>
-		<div class="metric-card panel" use:premiumCard={{ color: 'var(--color-medium)' }}>
-			<div class="metric-label">Expiring &lt; 30 Days</div>
-			<div class="metric-value text-warning">--</div>
+
+		<div class="metric-card panel" id="kpi-obligations-count">
+			<div class="metric-label">Analyzed Obligations</div>
+			<div class="metric-value-container">
+				<div class="metric-value">{totalObligations}</div>
+				<span class="metric-trend trend-neutral">
+					{totalContracts} docs
+				</span>
+			</div>
+			<p class="metric-description">Individual contract clauses extracted and categorized</p>
 		</div>
-		<div class="metric-card panel" use:premiumCard={{ color: 'var(--accent-primary)' }}>
-			<div class="metric-label">In Negotiation</div>
-			<div class="metric-value">--</div>
+
+		<div class="metric-card panel" id="kpi-queue-status">
+			<div class="metric-label">Insight Velocity</div>
+			<div class="metric-value-container">
+				{#if processingContracts.length > 0}
+					<div class="metric-value text-warning">
+						{processingContracts.length} active
+					</div>
+					<div class="queue-mini-spinner">
+						<span class="spinner spinner-sm"></span>
+					</div>
+				{:else}
+					<div class="metric-value text-success">
+						Ready
+					</div>
+					<span class="metric-trend trend-up">
+						Idle
+					</span>
+				{/if}
+			</div>
+			<p class="metric-description">
+				{#if processingContracts.length > 0}
+					{@const phase = getProcessingPhase(processingContracts[0].metadata_json?.processing_step)}
+					Running standard AI pipeline ({phase}...)
+				{:else}
+					All uploaded agreements have been processed
+				{/if}
+			</p>
 		</div>
 	</div>
 
-	<h3 class="section-title">Recent Activity</h3>
-	
-	<div class="data-table panel">
-		<div class="table-header">
-			<div class="col col-name">Document</div>
-			<div class="col col-status">Status</div>
-			<div class="col col-risk">Risk Score</div>
-			<div class="col col-date">Uploaded</div>
-			<div class="col col-actions"></div>
+	<!-- Obligation Risk Heatmap Component -->
+	<div class="heatmap-section panel" id="kpi-obligation-heatmap">
+		<div class="heatmap-header">
+			<div>
+				<h3>Obligation Risk Distribution</h3>
+				<p class="text-tertiary">Real-time mapping of severity and liability categories across your portfolio</p>
+			</div>
+			<div class="total-badge">{totalObligations} Obligations</div>
 		</div>
-		
-		{#if contracts.length === 0}
-			<div class="table-row empty-row">
-				No contracts analyzed yet.
+
+		{#if totalObligations > 0}
+			{@const critPct = (allRiskCounts.critical / totalObligations) * 100}
+			{@const highPct = (allRiskCounts.high / totalObligations) * 100}
+			{@const medPct = (allRiskCounts.medium / totalObligations) * 100}
+			{@const lowPct = (allRiskCounts.low / totalObligations) * 100}
+			<!-- stacked bar chart -->
+			<div class="stacked-bar-container">
+				<div class="stacked-bar-progress">
+					{#if allRiskCounts.critical > 0}
+						<div class="bar-segment bar-critical" style="width: {critPct}%" title="Critical: {allRiskCounts.critical} ({Math.round(critPct)}%)"></div>
+					{/if}
+					{#if allRiskCounts.high > 0}
+						<div class="bar-segment bar-high" style="width: {highPct}%" title="High: {allRiskCounts.high} ({Math.round(highPct)}%)"></div>
+					{/if}
+					{#if allRiskCounts.medium > 0}
+						<div class="bar-segment bar-medium" style="width: {medPct}%" title="Medium: {allRiskCounts.medium} ({Math.round(medPct)}%)"></div>
+					{/if}
+					{#if allRiskCounts.low > 0}
+						<div class="bar-segment bar-low" style="width: {lowPct}%" title="Low: {allRiskCounts.low} ({Math.round(lowPct)}%)"></div>
+					{/if}
+				</div>
+
+				<div class="bar-legend">
+					<div class="legend-item">
+						<span class="legend-dot dot-critical"></span>
+						<span class="legend-label">Critical</span>
+						<span class="legend-count">({allRiskCounts.critical})</span>
+					</div>
+					<div class="legend-item">
+						<span class="legend-dot dot-high"></span>
+						<span class="legend-label">High</span>
+						<span class="legend-count">({allRiskCounts.high})</span>
+					</div>
+					<div class="legend-item">
+						<span class="legend-dot dot-medium"></span>
+						<span class="legend-label">Medium</span>
+						<span class="legend-count">({allRiskCounts.medium})</span>
+					</div>
+					<div class="legend-item">
+						<span class="legend-dot dot-low"></span>
+						<span class="legend-label">Low</span>
+						<span class="legend-count">({allRiskCounts.low})</span>
+					</div>
+				</div>
+			</div>
+		{:else}
+			<div class="heatmap-empty text-tertiary">
+				Upload contracts or paste text to display your risk distribution heatmap.
 			</div>
 		{/if}
+	</div>
 
-		{#each contracts as contract, i}
-			<!-- svelte-ignore a11y_click_events_have_key_events -->
-			<!-- svelte-ignore a11y_no_static_element_interactions -->
-			<div class="table-row clickable-row stagger-entry" style="--index: {i}" onclick={(e: MouseEvent) => {
-				// Don't navigate if they clicked the reprocess or delete button
-				const target = e.target as HTMLElement | null;
-				if (!target || !target.closest('.btn-icon')) {
-					goto(`/contracts/${contract.id}`);
-				}
-			}}>
-				<div class="col col-name">
-					<svg class="file-icon" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="16" y1="13" x2="8" y2="13"/><line x1="16" y1="17" x2="8" y2="17"/><polyline points="10 9 9 9 8 9"/></svg>
-					{contract.filename}
-				</div>
-				<div class="col col-status" style="flex: 2; min-width: 0;">
-					{#if contract.status === 'COMPLETED'}
-						<span class="badge badge-success">Completed</span>
-					{:else if contract.status === 'FAILED'}
-						<span class="badge badge-danger">Failed</span>
-					{:else}
-						{@const phase = getProcessingPhase(contract.metadata_json?.processing_step)}
-							<div class="thinking-indicator" title={contract.metadata_json?.processing_step || "Processing"}>
-								<span class="spinner spinner-sm"></span>
-								<span class="thinking-label">{phase}</span>
-								<span class="thinking-step">{contract.metadata_json?.processing_step || "Processing..."}</span>
-							</div>
-						{/if}
-					</div>
-				<div class="col col-risk">
-					{#if contract.status === 'COMPLETED' && contract.overall_risk}
-						<span class="risk-indicator risk-{contract.overall_risk.toLowerCase()}"></span> 
-						<span class="risk-label">{contract.overall_risk.toLowerCase()}</span>
-					{:else}
-						<span class="text-tertiary">--</span>
-					{/if}
-				</div>
-				<div class="col col-date text-tertiary">{timeAgo(contract.created_at)}</div>
-				<div class="col col-actions" style="display: flex; gap: 8px; justify-content: flex-end;">
-					{#if contract.status === 'FAILED' || contract.status === 'COMPLETED'}
-						<button class="btn-icon" onclick={() => handleReprocess(contract.id)} aria-label="Reprocess" title="Reprocess">
-							<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 12a9 9 0 1 0 9-9 9.75 9.75 0 0 0-6.74 2.74L3 8"/><path d="M3 3v5h5"/></svg>
-						</button>
-					{/if}
-					<button class="btn-icon" onclick={(e) => { e.stopPropagation(); promptDelete(contract.id); }} aria-label="Delete" title="Delete Contract" style="color: var(--text-tertiary);">
-						<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 6h18"></path><path d="M19 6v14c0 1-1 2-2 2H7c-1 0-2-1-2-2V6"></path><path d="M8 6V4c0-1 1-2 2-2h4c1 0 2 1 2 2v2"></path></svg>
-					</button>
-				</div>
+	<!-- Analytics Split View: Clause Taxonomy & Critical Feed -->
+	<div class="dashboard-grid">
+		<!-- Left: Top Exposure Vectors -->
+		<div class="grid-card panel" id="kpi-exposure-vectors">
+			<div class="grid-card-header">
+				<h3>Top Exposure Vectors</h3>
+				<p class="text-tertiary font-xs">Most vulnerable agreement clause categories</p>
 			</div>
-		{/each}
+
+			<div class="vector-list">
+				{#if topExposureVectors.length > 0}
+					{@const maxScore = Math.max(...topExposureVectors.map(v => v.severityScore))}
+					{#each topExposureVectors as v, i}
+						<div class="vector-item stagger-entry" style="--index: {i}">
+							<div class="vector-row">
+								<span class="vector-title">{v.type}</span>
+								<div class="vector-meta">
+									{#if v.critical > 0}
+										<span class="mini-badge badge-critical">{v.critical} Crit</span>
+									{/if}
+									{#if v.high > 0}
+										<span class="mini-badge badge-high">{v.high} High</span>
+									{/if}
+									<span class="vector-obligations-count text-tertiary">({v.total})</span>
+								</div>
+							</div>
+							<div class="vector-track">
+								<div 
+									class="vector-progress" 
+									class:progress-critical={v.critical > 0}
+									class:progress-high={v.critical === 0 && v.high > 0}
+									style="width: {Math.max(8, (v.severityScore / maxScore) * 100)}%"
+								></div>
+							</div>
+						</div>
+					{/each}
+				{:else}
+					<div class="empty-state text-tertiary">
+						No exposures classified. Complete standard contract reviews first.
+					</div>
+				{/if}
+			</div>
+		</div>
+
+		<!-- Right: Recent Critical Triggers Feed -->
+		<div class="grid-card panel" id="kpi-critical-feed">
+			<div class="grid-card-header">
+				<h3>Recent Critical Triggers</h3>
+				<p class="text-tertiary font-xs">Chronological alerts for high-liability findings</p>
+			</div>
+
+			<div class="triggers-feed">
+				{#if recentCriticalTriggers.length > 0}
+					{#each recentCriticalTriggers as trigger, i}
+						<div class="trigger-card stagger-entry" style="--index: {i}">
+							<div class="trigger-top">
+								<div class="trigger-title-container">
+									<span class="trigger-risk-pill" class:pill-critical={trigger.risk_level === 'CRITICAL'} class:pill-high={trigger.risk_level === 'HIGH'}>
+										{trigger.risk_level}
+									</span>
+									<span class="trigger-clause-type">{trigger.clause_type}</span>
+								</div>
+								<span class="trigger-time">{timeAgo(trigger.created_at)}</span>
+							</div>
+							<div class="trigger-doc-info text-tertiary">
+								<svg class="file-icon" width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/></svg>
+								<span class="trigger-filename">{trigger.filename}</span>
+							</div>
+							<p class="trigger-snippet" title={trigger.risk_reasoning}>
+								{trigger.risk_reasoning}
+							</p>
+							<div class="trigger-footer">
+								<button class="btn-review" onclick={() => goto(`/contracts/${trigger.contractId}`)}>
+									Review Redlines
+									<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><line x1="5" y1="12" x2="19" y2="12"/><polyline points="12 5 19 12 12 19"/></svg>
+								</button>
+							</div>
+						</div>
+					{/each}
+				{:else}
+					<div class="empty-state text-tertiary">
+						No active risk alerts. Standard portfolio health remains secure.
+					</div>
+				{/if}
+			</div>
+		</div>
 	</div>
 </div>
-
-	{#if deleteModalOpen}
-		<div class="modal-root">
-			<button type="button" class="modal-backdrop" aria-label="Close" onclick={() => deleteModalOpen = false}></button>
-			<div class="modal-content" role="dialog" aria-modal="true">
-				<div class="modal-header">
-					<div class="modal-icon warning">
-						<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"></path><line x1="12" y1="9" x2="12" y2="13"></line><line x1="12" y1="17" x2="12.01" y2="17"></line></svg>
-					</div>
-					<h3>Delete Contract</h3>
-				</div>
-				<div class="modal-body">
-					<p>Are you sure you want to completely remove this contract? This will delete all extracted clauses, AI reasoning, and traces. This action cannot be undone.</p>
-				</div>
-				<div class="modal-footer flex-end gap-12">
-					<button class="btn btn-secondary" onclick={() => deleteModalOpen = false}>Cancel</button>
-					<button class="btn btn-danger" onclick={handleDelete}>Delete Permanently</button>
-				</div>
-			</div>
-		</div>
-	{/if}
-
-	{#if pasteModalOpen}
-		<div class="modal-root">
-			<button type="button" class="modal-backdrop" aria-label="Close" onclick={() => pasteModalOpen = false}></button>
-			<div class="modal-content modal-content-wide" role="dialog" aria-modal="true">
-				<div class="modal-header">
-					<div class="modal-icon info">
-						<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="12" y1="13" x2="12" y2="17"/><line x1="12" y1="9" x2="12.01" y2="9"/></svg>
-					</div>
-					<h3>Analyze Pasted Contract Text</h3>
-				</div>
-				<div class="modal-body">
-					<p class="text-tertiary modal-help">
-						Paste the contract text below (emails, Google Docs, plaintext). We'll analyze it like a PDF.
-					</p>
-					<textarea
-						bind:value={pastedText}
-						class="input-field mono-textarea"
-						rows="14"
-						placeholder="Paste contract text here..."
-					></textarea>
-				</div>
-				<div class="modal-footer flex-end gap-12">
-					<button class="btn btn-secondary" onclick={() => pasteModalOpen = false}>Cancel</button>
-					<button class="btn btn-primary" onclick={handlePasteAnalyze} disabled={isUploading}>Analyze</button>
-				</div>
-			</div>
-		</div>
-	{/if}
 
 
 
 <style>
-	.page-header {
-		padding: 32px 40px 24px;
-		border-bottom: 1px solid var(--border-subtle);
-	}
-
-	.breadcrumbs {
-		display: flex;
-		align-items: center;
-		gap: 8px;
-		font-size: 13px;
-		margin-bottom: 12px;
-	}
-
-	.crumb {
-		color: var(--text-tertiary);
-	}
-
-	.crumb.active {
-		color: var(--text-primary);
-		font-weight: 500;
-	}
-
-	.separator {
-		color: var(--border-strong);
-	}
-
-	.header-content h1 {
-		font-size: 20px;
-		font-weight: 600;
-		margin: 0;
-	}
-
 	.page-content {
 		padding: 32px 40px;
 		max-width: 1200px;
+		width: 100%;
+		box-sizing: border-box;
 	}
 
+	/* Vercel-style metric grid */
 	.metric-row {
 		display: grid;
 		grid-template-columns: repeat(4, 1fr);
 		gap: 16px;
-		margin-bottom: 40px;
+		margin-bottom: 24px;
 	}
 
 	.metric-card {
 		background: var(--bg-glass-card);
 		border: 1px solid var(--border-glass);
-		border-radius: 12px;
-		padding: 24px 20px;
-		transition: border-color 220ms var(--ease-spring-gentle), 
-		            transform 200ms var(--ease-spring-gentle), 
-		            box-shadow 220ms var(--ease-spring-gentle);
-		cursor: pointer;
+		border-radius: 8px;
+		padding: 20px;
+		display: flex;
+		flex-direction: column;
 		position: relative;
 		overflow: hidden;
+		transition: border-color 200ms cubic-bezier(0.23, 1, 0.32, 1), 
+		            box-shadow 200ms cubic-bezier(0.23, 1, 0.32, 1),
+		            transform 160ms cubic-bezier(0.23, 1, 0.32, 1);
 	}
 
 	.metric-card:hover {
-		transform: translateY(-2px);
 		border-color: var(--border-glass-hover);
-		box-shadow: 0 8px 30px rgba(0, 0, 0, 0.35);
+		box-shadow: var(--shadow-md);
 	}
 
 	.metric-card:active {
-		transform: translateY(-1px) scale(0.975);
-	}
-
-	.metric-card::before {
-		content: '';
-		position: absolute;
-		top: 0; left: 0; right: 0; height: 1px;
-		background: linear-gradient(90deg, transparent, rgba(255, 255, 255, 0.15), transparent);
+		transform: scale(0.975);
 	}
 
 	.metric-label {
-		font-size: 13px;
+		font-size: 11px;
+		text-transform: uppercase;
+		letter-spacing: 0.8px;
 		color: var(--text-secondary);
+		font-weight: 600;
 		margin-bottom: 8px;
-		font-weight: 500;
+	}
+
+	.metric-value-container {
+		display: flex;
+		align-items: baseline;
+		justify-content: space-between;
+		margin-bottom: 4px;
 	}
 
 	.metric-value {
-		font-size: 24px;
+		font-size: 28px;
+		font-weight: 700;
+		color: var(--text-primary);
+		line-height: 1.1;
+		font-variant-numeric: tabular-nums;
+	}
+
+	.metric-trend {
+		font-size: 11px;
+		font-weight: 600;
+		padding: 2px 6px;
+		border-radius: 4px;
+	}
+
+	.trend-up {
+		background: rgba(var(--color-low-rgb), 0.1);
+		color: var(--color-low);
+	}
+
+	.trend-warn {
+		background: rgba(var(--color-medium-rgb), 0.1);
+		color: var(--color-medium);
+	}
+
+	.trend-down {
+		background: rgba(var(--color-critical-rgb), 0.1);
+		color: var(--color-critical);
+	}
+
+	.trend-neutral {
+		background: var(--bg-hover);
+		color: var(--text-secondary);
+	}
+
+	.metric-description {
+		font-size: 12px;
+		color: var(--text-tertiary);
+		margin: 4px 0 0 0;
+		line-height: 1.4;
+	}
+
+	.queue-mini-spinner {
+		display: flex;
+		align-items: center;
+	}
+
+	/* stacked bar heatmap chart */
+	.heatmap-section {
+		padding: 24px;
+		margin-bottom: 24px;
+		border-radius: 8px;
+		background: var(--bg-panel);
+		border: 1px solid var(--border-subtle);
+	}
+
+	.heatmap-header {
+		display: flex;
+		justify-content: space-between;
+		align-items: flex-start;
+		margin-bottom: 20px;
+	}
+
+	.heatmap-header h3 {
+		margin: 0 0 4px 0;
+		font-size: 16px;
 		font-weight: 600;
 		color: var(--text-primary);
 	}
 
-	.text-danger { color: #e5484d; }
-	.text-warning { color: #f5a623; }
-	.text-tertiary { color: var(--text-tertiary); }
-
-	.section-title {
-		font-size: 14px;
-		margin-bottom: 16px;
-		color: var(--text-primary);
+	.heatmap-header p {
+		margin: 0;
+		font-size: 13px;
 	}
 
-	/* Data Table */
-	.data-table {
+	.total-badge {
+		font-size: 11px;
+		font-weight: 600;
+		background: var(--bg-hover);
+		color: var(--text-secondary);
+		border: 1px solid var(--border-subtle);
+		padding: 4px 8px;
+		border-radius: 6px;
+	}
+
+	.stacked-bar-container {
+		display: flex;
+		flex-direction: column;
+		gap: 16px;
+	}
+
+	.stacked-bar-progress {
+		height: 10px;
+		border-radius: 99px;
+		overflow: hidden;
+		display: flex;
+		background: var(--bg-hover);
+	}
+
+	.bar-segment {
+		height: 100%;
+		transition: opacity 150ms ease;
+		cursor: pointer;
+	}
+
+	.bar-segment:hover {
+		opacity: 0.85;
+	}
+
+	.bar-critical { background: var(--color-critical); }
+	.bar-high { background: var(--color-high); }
+	.bar-medium { background: var(--color-medium); }
+	.bar-low { background: var(--color-low); }
+
+	.bar-legend {
+		display: flex;
+		flex-wrap: wrap;
+		gap: 16px;
+	}
+
+	.legend-item {
+		display: flex;
+		align-items: center;
+		gap: 6px;
+		font-size: 12px;
+	}
+
+	.legend-dot {
+		width: 8px;
+		height: 8px;
+		border-radius: 50%;
+	}
+
+	.dot-critical { background: var(--color-critical); }
+	.dot-high { background: var(--color-high); }
+	.dot-medium { background: var(--color-medium); }
+	.dot-low { background: var(--color-low); }
+
+	.legend-label {
+		color: var(--text-primary);
+		font-weight: 500;
+	}
+
+	.legend-count {
+		color: var(--text-tertiary);
+	}
+
+	.heatmap-empty {
+		padding: 24px;
+		text-align: center;
+		font-size: 13px;
+	}
+
+	/* Split grids */
+	.dashboard-grid {
+		display: grid;
+		grid-template-columns: 1fr 1.2fr;
+		gap: 24px;
+	}
+
+	.grid-card {
+		padding: 24px;
+		border-radius: 8px;
+		background: var(--bg-panel);
+		border: 1px solid var(--border-subtle);
 		display: flex;
 		flex-direction: column;
 	}
 
-	.table-header {
-		display: flex;
-		padding: 12px 16px;
-		border-bottom: 1px solid var(--border-subtle);
-		font-size: 12px;
-		font-weight: 500;
-		color: var(--text-secondary);
+	.grid-card-header {
+		margin-bottom: 20px;
 	}
 
-	.table-row {
-		display: flex;
-		align-items: center;
-		padding: 14px 20px;
-		border-bottom: 1px solid var(--border-subtle);
-		font-size: 13px;
-		transition: background-color 180ms var(--ease-out), 
-					transform 180ms var(--ease-out);
-	}
-
-	.table-row:last-child {
-		border-bottom: none;
-	}
-
-	.table-row.clickable-row {
-		cursor: pointer;
-	}
-
-	.table-row.clickable-row:hover {
-		background-color: var(--bg-hover);
-	}
-
-	.table-row.clickable-row:active {
-		transform: scale(0.995);
-	}
-
-	.col { flex: 1; }
-	.col-name { 
-		flex: 3; 
-		display: flex; 
-		align-items: center; 
-		gap: 10px; 
-		font-weight: 500;
-	}
-	.col-status { flex: 2; }
-	.col-risk { flex: 2; display: flex; align-items: center; gap: 8px; }
-	.col-date { flex: 1; text-align: right; }
-	.col-actions { flex: 0.5; display: flex; justify-content: flex-end; }
-
-		.btn-icon {
-		background: transparent;
-		border: none;
-		color: var(--text-tertiary);
-		cursor: pointer;
-		padding: 4px;
-		border-radius: 4px;
-		display: flex;
-		align-items: center;
-		justify-content: center;
-			transition: background 150ms ease, color 150ms ease, transform 120ms var(--ease-out);
-		}
-		.btn-icon:active { transform: scale(0.97); }
-	.btn-icon:hover {
-		background: var(--bg-hover);
+	.grid-card-header h3 {
+		margin: 0 0 4px 0;
+		font-size: 16px;
+		font-weight: 600;
 		color: var(--text-primary);
+	}
+
+	.font-xs {
+		font-size: 12px;
+	}
+
+	.vector-list {
+		display: flex;
+		flex-direction: column;
+		gap: 16px;
+	}
+
+	.vector-item {
+		display: flex;
+		flex-direction: column;
+		gap: 6px;
+	}
+
+	.vector-row {
+		display: flex;
+		justify-content: space-between;
+		align-items: center;
+	}
+
+	.vector-title {
+		font-size: 13px;
+		font-weight: 500;
+		color: var(--text-primary);
+	}
+
+	.vector-meta {
+		display: flex;
+		align-items: center;
+		gap: 6px;
+	}
+
+	.mini-badge {
+		font-size: 9px;
+		font-weight: 700;
+		padding: 1px 4px;
+		border-radius: 3px;
+		text-transform: uppercase;
+	}
+
+	.badge-critical {
+		background: rgba(var(--color-critical-rgb), 0.1);
+		color: var(--color-critical);
+		border: 1px solid rgba(var(--color-critical-rgb), 0.2);
+	}
+
+	.badge-high {
+		background: rgba(var(--color-high-rgb), 0.1);
+		color: var(--color-high);
+		border: 1px solid rgba(var(--color-high-rgb), 0.2);
+	}
+
+	.vector-obligations-count {
+		font-size: 11px;
+	}
+
+	.vector-track {
+		height: 4px;
+		background: var(--bg-hover);
+		border-radius: 99px;
+		overflow: hidden;
+	}
+
+	.vector-progress {
+		height: 100%;
+		border-radius: 99px;
+		background: var(--accent-primary);
+	}
+
+	.progress-critical { background: var(--color-critical); }
+	.progress-high { background: var(--color-high); }
+
+	/* Triggers feed */
+	.triggers-feed {
+		display: flex;
+		flex-direction: column;
+		gap: 12px;
+		max-height: 500px;
+		overflow-y: auto;
+		padding-right: 4px;
+	}
+
+	.trigger-card {
+		padding: 14px;
+		border-radius: 6px;
+		background: var(--bg-glass-card);
+		border: 1px solid var(--border-subtle);
+		display: flex;
+		flex-direction: column;
+		gap: 8px;
+		transition: border-color 150ms ease, box-shadow 150ms ease;
+	}
+
+	.trigger-card:hover {
+		border-color: var(--border-glass-hover);
+		box-shadow: var(--shadow-sm);
+	}
+
+	.trigger-top {
+		display: flex;
+		justify-content: space-between;
+		align-items: center;
+	}
+
+	.trigger-title-container {
+		display: flex;
+		align-items: center;
+		gap: 8px;
+	}
+
+	.trigger-risk-pill {
+		font-size: 9px;
+		font-weight: 700;
+		padding: 2px 6px;
+		border-radius: 3px;
+		text-transform: uppercase;
+	}
+
+	.pill-critical {
+		background: var(--color-critical);
+		color: var(--text-on-accent);
+	}
+
+	.pill-high {
+		background: var(--color-high);
+		color: var(--text-on-accent);
+	}
+
+	.trigger-clause-type {
+		font-size: 12px;
+		font-weight: 600;
+		color: var(--text-primary);
+	}
+
+	.trigger-time {
+		font-size: 11px;
+		color: var(--text-tertiary);
+	}
+
+	.trigger-doc-info {
+		display: flex;
+		align-items: center;
+		gap: 6px;
+		font-size: 11px;
 	}
 
 	.file-icon {
 		color: var(--text-tertiary);
 	}
 
-	.badge {
-		display: inline-flex;
-		align-items: center;
-		padding: 2px 8px;
-		border-radius: 100px;
-		font-size: 11px;
-		font-weight: 600;
-	}
-
-	.badge-success { background: rgba(46, 160, 67, 0.15); color: #3fb950; }
-	.badge-warning { background: rgba(210, 153, 34, 0.15); color: #d29922; }
-	.badge-blue { background: rgba(88, 166, 255, 0.15); color: #58a6ff; }
-
-	.risk-indicator {
-		width: 8px;
-		height: 8px;
-		border-radius: 50%;
-	}
-
-	.risk-low { background: #3fb950; }
-	.risk-high { background: #f85149; }
-
-	.drawer-overlay {
-		position: fixed;
-		top: 0; left: 0; right: 0; bottom: 0;
-		background: rgba(0, 0, 0, 0.5);
-		backdrop-filter: blur(8px);
-		z-index: 100;
-		animation: fadeIn 220ms cubic-bezier(0.16, 1, 0.3, 1) forwards;
-	}
-
-	.drawer {
-		position: fixed;
-		top: 0; right: 0; bottom: 0;
-		width: 620px;
-		max-width: 100vw;
-		background: var(--bg-glass);
-		backdrop-filter: blur(24px) saturate(190%);
-		-webkit-backdrop-filter: blur(24px) saturate(190%);
-		border-left: 1px solid var(--border-glass);
-		box-shadow: var(--shadow-premium);
-		z-index: 101;
-		display: flex;
-		flex-direction: column;
-		transform: translateX(100%);
-		transition: transform 280ms cubic-bezier(0.16, 1, 0.3, 1);
-	}
-	.drawer.open {
-		transform: translateX(0);
-	}
-
-		.drawer-header {
-			padding: 24px;
-			border-bottom: 1px solid var(--border-subtle);
-			display: flex;
-		justify-content: space-between;
-		align-items: center;
-	}
-
-	.drawer-title {
-		font-size: 1.25rem;
-		font-weight: 500;
-		color: var(--text-primary);
-		margin: 0;
-	}
-
-		.drawer-close {
-		background: transparent;
-		border: none;
-		color: var(--text-tertiary);
-		cursor: pointer;
-		padding: 4px;
-		border-radius: 4px;
-		display: flex;
-		align-items: center;
-		justify-content: center;
-			transition: background 150ms ease, color 150ms ease, transform 120ms var(--ease-out);
-		}
-		.drawer-close:active { transform: scale(0.97); }
-	.drawer-close:hover {
-		background: var(--bg-hover);
-		color: var(--text-primary);
-	}
-
-	.drawer-content {
-		padding: 24px;
-		overflow-y: auto;
-		flex: 1;
-		display: flex;
-		flex-direction: column;
-		gap: 32px;
-	}
-
-	.drawer-loading {
-		display: flex;
-		flex-direction: column;
-		align-items: center;
-		justify-content: center;
-		height: 200px;
-		gap: 16px;
-		color: var(--text-tertiary);
-	}
-
-	.drawer-section h3 {
-		font-size: 0.875rem;
-		text-transform: uppercase;
-		letter-spacing: 0.05em;
-		color: var(--text-tertiary);
-		margin: 0 0 16px 0;
-	}
-
-		.drawer-meta {
-			display: grid;
-			grid-template-columns: 1fr 1fr;
-			gap: 16px;
-			background: rgba(255, 255, 255, 0.02);
-			padding: 18px;
-			border-radius: 10px;
-			border: 1px solid rgba(255, 255, 255, 0.05);
-		}
-
-	.meta-item {
-		display: flex;
-		flex-direction: column;
-		gap: 4px;
-		font-size: 0.875rem;
-	}
-
-	.meta-label {
-		color: var(--text-tertiary);
-	}
-
-	.clauses-list {
-		display: flex;
-		flex-direction: column;
-		gap: 16px;
-	}
-
-	.clause-card {
-		background: var(--bg-glass-card);
-		border: 1px solid var(--border-glass);
-		border-radius: 12px;
-		padding: 18px;
-		display: flex;
-		flex-direction: column;
-		gap: 12px;
-		transition: transform 200ms var(--ease-out), 
-					border-color 200ms var(--ease-out), 
-					box-shadow 200ms var(--ease-out), 
-					background-color 200ms var(--ease-out);
-		position: relative;
+	.trigger-filename {
+		white-space: nowrap;
 		overflow: hidden;
+		text-overflow: ellipsis;
+		max-width: 250px;
 	}
 
-	.clause-card:hover {
-		transform: translateY(-2px);
-		border-color: var(--border-glass-hover);
-		box-shadow: 0 8px 30px rgba(0, 0, 0, 0.35);
-	}
-
-	.clause-card:active {
-		transform: scale(0.985);
-	}
-
-	.clause-card.risk-critical {
-		background: var(--glow-critical);
-		border-color: var(--glow-critical-border);
-		box-shadow: 0 4px 20px rgba(255, 59, 48, 0.015);
-	}
-	.clause-card.risk-critical:hover {
-		border-color: rgba(255, 59, 48, 0.4);
-		box-shadow: 0 8px 30px rgba(255, 59, 48, 0.05), 0 0 1px rgba(255, 59, 48, 0.2);
-	}
-
-	.clause-card.risk-high {
-		background: var(--glow-high);
-		border-color: var(--glow-high-border);
-		box-shadow: 0 4px 20px rgba(248, 81, 73, 0.015);
-	}
-	.clause-card.risk-high:hover {
-		border-color: rgba(248, 81, 73, 0.4);
-		box-shadow: 0 8px 30px rgba(248, 81, 73, 0.05), 0 0 1px rgba(248, 81, 73, 0.2);
-	}
-
-	.clause-card.risk-medium {
-		background: var(--glow-medium);
-		border-color: var(--glow-medium-border);
-		box-shadow: 0 4px 20px rgba(210, 153, 34, 0.015);
-	}
-	.clause-card.risk-medium:hover {
-		border-color: rgba(210, 153, 34, 0.4);
-		box-shadow: 0 8px 30px rgba(210, 153, 34, 0.05), 0 0 1px rgba(210, 153, 34, 0.2);
-	}
-
-	.clause-card.risk-low {
-		background: var(--glow-low);
-		border-color: var(--glow-low-border);
-		box-shadow: 0 4px 20px rgba(63, 185, 80, 0.015);
-	}
-	.clause-card.risk-low:hover {
-		border-color: rgba(63, 185, 80, 0.4);
-		box-shadow: 0 8px 30px rgba(63, 185, 80, 0.05), 0 0 1px rgba(63, 185, 80, 0.2);
-	}
-
-	.clause-header {
-		display: flex;
-		justify-content: space-between;
-		align-items: center;
-	}
-
-	.clause-type {
-		font-weight: 500;
-		color: var(--text-primary);
-	}
-
-	.clause-text {
-		font-size: 0.875rem;
-		color: var(--text-secondary);
-		line-height: 1.6;
-		padding: 14px;
-		background: rgba(0, 0, 0, 0.25);
-		border-radius: 8px;
-		border: 1px solid rgba(255, 255, 255, 0.04);
-	}
-
-	.clause-reasoning, .clause-redline {
-		font-size: 0.875rem;
+	.trigger-snippet {
+		margin: 0;
+		font-size: 12px;
 		color: var(--text-secondary);
 		line-height: 1.4;
-	}
-	
-	.clause-redline-head {
-		display: flex;
-		align-items: center;
-		justify-content: space-between;
-		gap: 12px;
-	}
-
-	.btn-compact {
-		height: 28px;
-		padding: 0 10px;
-		font-size: 12px;
-	}
-
-	.clause-redline-block {
-		margin: 8px 0 0 0;
-		padding: 16px;
-		border-radius: 10px;
-		border: 1px solid rgba(255, 255, 255, 0.06);
-		background: rgba(10, 10, 12, 0.65);
-		color: #a7f3d0;
-		text-shadow: 0 0 12px rgba(167, 243, 208, 0.08);
-		white-space: pre-wrap;
-		line-height: 1.55;
-		font-family: 'JetBrains Mono', 'Fira Code', ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace;
-		font-size: 13px;
-	}
-
-	.clause-tech {
-		border-top: 1px solid var(--border-subtle);
-		padding-top: 10px;
-		margin-top: 2px;
-	}
-
-	.clause-tech > summary {
-		cursor: pointer;
-		color: var(--text-tertiary);
-		font-size: 12px;
-		user-select: none;
-		list-style: none;
-	}
-
-	.clause-tech > summary::-webkit-details-marker {
-		display: none;
-	}
-
-	.clause-tech > summary::before {
-		content: "▸";
-		display: inline-block;
-		margin-right: 8px;
-		transform: translateY(-1px);
-		transition: transform 120ms var(--ease-out);
-	}
-
-	.clause-tech[open] > summary::before {
-		transform: rotate(90deg) translateY(-1px);
-	}
-
-	.tech-grid {
-		margin-top: 10px;
-		display: grid;
-		grid-template-columns: repeat(2, minmax(0, 1fr));
-		gap: 8px 14px;
-	}
-
-	.tech-row {
-		display: flex;
-		align-items: baseline;
-		justify-content: space-between;
-		gap: 12px;
-		padding: 10px 12px;
-		background: rgba(255, 255, 255, 0.03);
-		border: 1px solid var(--border-subtle);
-		border-radius: 8px;
-	}
-
-	.tech-label {
-		color: var(--text-tertiary);
-		font-size: 11px;
-		text-transform: uppercase;
-		letter-spacing: 0.05em;
-	}
-
-	.tech-value {
-		color: var(--text-secondary);
-		font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace;
-		font-size: 12px;
-	}
-
-	.tech-dims {
-		margin-top: 10px;
-		display: grid;
-		grid-template-columns: repeat(2, minmax(0, 1fr));
-		gap: 6px 12px;
-	}
-
-	.dim-row {
-		display: flex;
-		align-items: baseline;
-		justify-content: space-between;
-		gap: 10px;
-		padding: 8px 10px;
-		border: 1px solid var(--border-subtle);
-		border-radius: 8px;
-		background: rgba(255, 255, 255, 0.02);
-	}
-
-	.dim-key {
-		color: var(--text-tertiary);
-		font-size: 12px;
-	}
-
-	.dim-val {
-		color: var(--text-secondary);
-		font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace;
-		font-size: 12px;
-	}
-
-	.raw-text-container {
-		font-family: 'JetBrains Mono', 'Fira Code', ui-monospace, monospace;
-		font-size: 12px;
-		color: var(--text-secondary);
-		line-height: 1.5;
-		white-space: pre-wrap;
-		padding: 16px;
-		background: rgba(10, 10, 12, 0.45);
-		border-radius: 10px;
-		border: 1px solid rgba(255, 255, 255, 0.05);
-		max-height: 300px;
-		overflow-y: auto;
-	}
-
-	/* Timeline Styles */
-	.timeline {
-		display: flex;
-		flex-direction: column;
-		gap: 0;
-		padding-left: 8px;
-	}
-
-	.processing-meta {
-		display: grid;
-		grid-template-columns: repeat(3, minmax(0, 1fr));
-		gap: 10px;
-		margin: 0 0 14px 0;
-	}
-
-	.pm-item {
-		display: flex;
-		align-items: baseline;
-		justify-content: space-between;
-		gap: 12px;
-		padding: 10px 12px;
-		border: 1px solid var(--border-subtle);
-		border-radius: 8px;
-		background: rgba(255, 255, 255, 0.03);
-	}
-
-	.pm-label {
-		color: var(--text-tertiary);
-		font-size: 11px;
-		text-transform: uppercase;
-		letter-spacing: 0.05em;
-	}
-
-	.pm-value {
-		color: var(--text-secondary);
-		font-size: 12px;
-		font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace;
-	}
-
-	.timeline-step {
-		display: flex;
-		gap: 16px;
-		position: relative;
-		padding-bottom: 24px;
-	}
-
-	.timeline-step:last-child {
-		padding-bottom: 0;
-	}
-
-	.timeline-step:not(:last-child)::before {
-		content: '';
-		position: absolute;
-		top: 24px;
-		bottom: 0;
-		left: 11px;
-		width: 2px;
-		background: var(--border-subtle);
-		border-radius: 2px;
-	}
-
-	.timeline-icon {
-		width: 24px;
-		height: 24px;
-		border-radius: 50%;
-		display: flex;
-		align-items: center;
-		justify-content: center;
-		flex-shrink: 0;
-		z-index: 1;
-		background: var(--bg-panel);
-		border: 2px solid var(--border-subtle);
-	}
-
-	.timeline-icon.done {
-		border-color: #3fb950;
-		background: rgba(63, 185, 80, 0.1);
-		color: #3fb950;
-	}
-
-	.timeline-icon.active {
-		border-color: #58a6ff;
-		background: rgba(88, 166, 255, 0.1);
-		color: #58a6ff;
-		box-shadow: 0 0 0 4px rgba(88, 166, 255, 0.1);
-	}
-
-	.timeline-step:hover .timeline-icon.active {
-		transform: scale(1.05);
-	}
-
-	.timeline-content {
-		display: flex;
-		flex-direction: column;
-		gap: 4px;
-		padding-top: 2px;
-	}
-
-	.timeline-text {
-		font-size: 14px;
-		color: var(--text-primary);
-		font-weight: 500;
-	}
-
-	.timeline-time {
-		font-size: 12px;
-		font-variant-numeric: tabular-nums;
-		font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
-	}
-
-	.time-active {
-		color: #58a6ff;
-		font-weight: 600;
-	}
-
-	@keyframes fadeIn {
-		from { opacity: 0; }
-		to { opacity: 1; }
-	}
-
-		.thinking-indicator {
-			display: flex;
-			align-items: center;
-			gap: 8px;
-			padding: 6px 10px;
-			border-radius: 999px;
-			background: rgba(255, 255, 255, 0.03);
-			border: 1px solid rgba(255, 255, 255, 0.06);
-			max-width: 100%;
-			min-width: 0;
-		}
-
-		.thinking-indicator-compact {
-			transform: scale(0.95);
-			transform-origin: left;
-		}
-
-		.thinking-label {
-			font-size: 11px;
-			font-weight: 600;
-			text-transform: uppercase;
-			letter-spacing: 0.6px;
-			color: var(--text-secondary);
-			line-height: 1;
-		}
-
-		.thinking-step {
-			font-size: 12px;
-			color: var(--text-secondary);
-			white-space: nowrap;
-			overflow: hidden;
-			text-overflow: ellipsis;
-			line-height: 1.2;
-			min-width: 0;
-		}
-
-	.truncate {
-		white-space: nowrap;
+		display: -webkit-box;
+		-webkit-line-clamp: 2;
+		-webkit-box-orient: vertical;
 		overflow: hidden;
 		text-overflow: ellipsis;
 	}
 
-	.btn-danger {
-		background: #e5484d;
-		color: #fff;
-		border: 1px solid #e5484d;
-	}
-	
-	.btn-danger:hover {
-		background: #c93c41;
-	}
-
-		.modal-root {
-			position: fixed;
-			top: 0;
-			left: 0;
-			width: 100vw;
-			height: 100vh;
-			z-index: 1000;
-			display: flex;
-			align-items: center;
-			justify-content: center;
-			animation: fadeIn 200ms ease-out forwards;
-		}
-
-		.modal-backdrop {
-			position: absolute;
-			inset: 0;
-			background: rgba(0, 0, 0, 0.6);
-			backdrop-filter: blur(4px);
-			border: none;
-			padding: 0;
-			margin: 0;
-			cursor: pointer;
-		}
-
-		.modal-content {
-			background: var(--bg-panel);
-			border: 1px solid var(--border-subtle);
-			border-radius: 12px;
-			width: 100%;
-			max-width: 440px;
-			box-shadow: 0 16px 40px rgba(0, 0, 0, 0.4);
-			transform: scale(0.95);
-			opacity: 0;
-			animation: modalIn 200ms cubic-bezier(0.23, 1, 0.32, 1) forwards;
-			position: relative;
-			z-index: 1;
-		}
-
-		.modal-content-wide { max-width: 720px; }
-
-		.modal-header {
-			padding: 24px 24px 16px;
-			display: flex;
-			align-items: center;
-			gap: 16px;
-		}
-
-	.modal-header h3 {
-		margin: 0;
-		font-size: 18px;
-		font-weight: 600;
-		color: var(--text-primary);
-	}
-
-	.modal-icon.warning {
-		width: 40px;
-		height: 40px;
-		border-radius: 50%;
-		background: rgba(229, 72, 77, 0.15);
-		color: #e5484d;
-		display: flex;
-		align-items: center;
-		justify-content: center;
-	}
-
-		.modal-body {
-			padding: 0 24px 24px;
-			color: var(--text-secondary);
-			font-size: 14px;
-			line-height: 1.5;
-		}
-
-		.modal-body p { margin: 0; }
-		.modal-help { margin-bottom: 12px; }
-
-		.mono-textarea {
-			width: 100%;
-			resize: vertical;
-			font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace;
-			min-height: 220px;
-		}
-
-		.modal-footer {
-			padding: 16px 24px;
-			border-top: 1px solid var(--border-subtle);
-			background: var(--bg-panel);
-			border-radius: 0 0 12px 12px;
-		}
-
-	.flex-end {
+	.trigger-footer {
 		display: flex;
 		justify-content: flex-end;
+		margin-top: 4px;
 	}
 
-	.gap-12 {
-		gap: 12px;
+	.btn-review {
+		background: transparent;
+		border: none;
+		color: var(--accent-primary);
+		font-size: 11px;
+		font-weight: 600;
+		cursor: pointer;
+		display: flex;
+		align-items: center;
+		gap: 4px;
+		padding: 4px 8px;
+		border-radius: 4px;
+		transition: background 150ms ease, transform 100ms ease;
 	}
 
-	@keyframes modalIn {
+	.btn-review:hover {
+		background: rgba(var(--accent-primary-rgb), 0.08);
+	}
+
+	.btn-review:active {
+		transform: scale(0.97);
+	}
+
+	.empty-state {
+		padding: 32px;
+		text-align: center;
+		font-size: 13px;
+	}
+
+
+
+	/* Stagger Animations */
+	.stagger-entry {
+		opacity: 0;
+		transform: translateY(8px);
+		animation: itemIn 250ms cubic-bezier(0.23, 1, 0.32, 1) forwards;
+		animation-delay: calc(var(--index, 0) * 30ms);
+	}
+
+	@keyframes itemIn {
 		to {
-			transform: scale(1);
 			opacity: 1;
+			transform: translateY(0);
+		}
+	}
+
+	@media (max-width: 900px) {
+		.metric-row {
+			grid-template-columns: repeat(2, 1fr);
+		}
+		.dashboard-grid {
+			grid-template-columns: 1fr;
+		}
+	}
+
+	@media (prefers-reduced-motion: reduce) {
+		.stagger-entry {
+			animation: none !important;
+			opacity: 1 !important;
+			transform: none !important;
 		}
 	}
 </style>
