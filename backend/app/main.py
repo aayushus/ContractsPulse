@@ -1974,6 +1974,7 @@ async def compare_contract_to_template(
     paras = paras[:30]
 
     import openai
+    import numpy as np
     client = openai.AsyncOpenAI(api_key=os.getenv("OPENAI_API_KEY"))
 
     if not clauses_with_embeddings or not paras:
@@ -1993,28 +1994,45 @@ async def compare_contract_to_template(
         raise HTTPException(status_code=500, detail=f"Embedding failed: {str(e)}")
 
     missing_sections = []
+
+    # Pre-calculate distances in memory to avoid N+1 DB queries
+    # We already have clauses_with_embeddings fetched earlier at the start of the endpoint.
+
+    # Pre-normalize clause embeddings outside the loop to optimize
+    normalized_clauses = []
+    for clause in clauses_with_embeddings:
+        ce_np = np.array(clause.embedding)
+        norm = np.linalg.norm(ce_np)
+        if norm > 0:
+            ce_np = ce_np / norm
+        normalized_clauses.append((clause, ce_np))
+
     for i, (para, pe) in enumerate(zip(paras, para_embeddings)):
-        # Find the closest clause; if still far, mark as missing (heuristic threshold)
-        try:
-            nearest = (
-                db.query(ContractClause)
-                .filter(ContractClause.contract_id == contract_id, ContractClause.embedding.isnot(None))
-                .order_by(ContractClause.embedding.cosine_distance(pe))
-                .limit(1)
-                .all()
-            )
-        except Exception:
-            nearest = []
-        if not nearest:
+        # Find the closest clause in memory
+        nearest_clause = None
+        min_dist = float("inf")
+
+        pe_np = np.array(pe)
+        norm = np.linalg.norm(pe_np)
+        if norm > 0:
+            pe_np = pe_np / norm
+
+        for clause, ce_np in normalized_clauses:
+            # np.dot(pe_np, ce_np) gets the cosine similarity because both are normalized
+            dist = 1.0 - np.dot(pe_np, ce_np)
+            if dist < min_dist:
+                min_dist = dist
+                nearest_clause = clause
+
+        if not nearest_clause:
             missing_sections.append({"index": i, "template_excerpt": para[:260]})
             continue
 
-        # Without the raw distance value from SQLAlchemy ordering, use a conservative heuristic:
+        # Use a conservative heuristic:
         # if clause type doesn't overlap with the para keywords, treat as potentially missing.
-        clause = nearest[0]
         key = " ".join(re.findall(r"[A-Za-z]{5,}", para.lower())[:12])
-        if key and key not in ((clause.text_content or "").lower()):
-            missing_sections.append({"index": i, "template_excerpt": para[:260], "nearest_clause_type": clause.clause_type})
+        if key and key not in ((nearest_clause.text_content or "").lower()):
+            missing_sections.append({"index": i, "template_excerpt": para[:260], "nearest_clause_type": nearest_clause.clause_type})
 
     # Clause position sanity: compare ordering of top similar template paras vs clause index order
     # (This is intentionally lightweight; UI can evolve later.)
