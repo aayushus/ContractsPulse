@@ -104,14 +104,11 @@ def get_current_user(
         token = authorization.split(" ")[1]
     
     if not token:
-        admin_user = db.query(User).filter(User.email == "admin@admin.com").first()
-        if not admin_user:
-            raise HTTPException(
-                status_code=401,
-                detail="Not authenticated and default admin user not found.",
-                headers={"WWW-Authenticate": "Bearer"},
-            )
-        return admin_user
+        raise HTTPException(
+            status_code=401,
+            detail="Not authenticated",
+            headers={"WWW-Authenticate": "Bearer"},
+        )
 
     try:
         payload = jwt.decode(token, JWT_SECRET, algorithms=[JWT_ALGORITHM])
