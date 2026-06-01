@@ -95,7 +95,7 @@ async def health_check():
 from .parser import extract_text_from_pdf, extract_contract_metadata, standardized_filename, compute_text_hash
 from .agents import process_contract_text, process_contract_text_fallback, _heuristic_redline, _first_sentence, _heuristic_risk, _enrich_ip_clause, verify_previous_redlines, extract_contract_obligations
 from .database import engine, Base, get_db
-from .models import User, Contract, ContractClause, ContractStatus, RiskLevel, ContractEvent, ClauseFeedback, ContractReminder, ReminderType, ReminderStatus, ContractTemplate
+from .models import User, Contract, ContractClause, ContractStatus, RiskLevel, ContractEvent, ClauseFeedback, ContractReminder, ReminderType, ContractTemplate
 
 def get_current_user(
     authorization: str | None = Header(None),
