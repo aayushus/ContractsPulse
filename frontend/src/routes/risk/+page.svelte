@@ -33,25 +33,53 @@
 	// UI Expanded drawers
 	let expandedRedlines = $state<Record<string, boolean>>({});
 
-	// Derived metrics
+	// Base metrics that only depend on the 'risks' array
+	let baseMetrics = $derived.by(() => {
+		let critical = 0;
+		let high = 0;
+		const docIds = new Set<string>();
+		const clauses = new Set<string>();
+		const contracts = new Set<string>();
+
+		for (const r of risks) {
+			if (r.risk_level === 'CRITICAL') critical++;
+			else if (r.risk_level === 'HIGH') high++;
+
+			docIds.add(r.contract_id);
+			if (r.clause_type) clauses.add(r.clause_type);
+			if (r.contract_filename) contracts.add(r.contract_filename);
+		}
+
+		return {
+			criticalCount: critical,
+			highCount: high,
+			affectedDocsCount: docIds.size,
+			uniqueClauseTypes: ['ALL', ...clauses],
+			uniqueContracts: ['ALL', ...contracts]
+		};
+	});
+
 	let totalRisksCount = $derived(risks.length);
-	let criticalCount = $derived(risks.filter(r => r.risk_level === 'CRITICAL').length);
-	let highCount = $derived(risks.filter(r => r.risk_level === 'HIGH').length);
-	let affectedDocsCount = $derived(new Set(risks.map(r => r.contract_id)).size);
+	let criticalCount = $derived(baseMetrics.criticalCount);
+	let highCount = $derived(baseMetrics.highCount);
+	let affectedDocsCount = $derived(baseMetrics.affectedDocsCount);
 	let avgRisksPerDoc = $derived(affectedDocsCount > 0 ? (totalRisksCount / affectedDocsCount).toFixed(1) : '0.0');
 
 	// Dynamic unique list of clause types and contracts for dropdown filters
-	let uniqueClauseTypes = $derived(['ALL', ...new Set(risks.map(r => r.clause_type).filter(Boolean))]);
-	let uniqueContracts = $derived(['ALL', ...new Set(risks.map(r => r.contract_filename).filter(Boolean))]);
+	let uniqueClauseTypes = $derived(baseMetrics.uniqueClauseTypes);
+	let uniqueContracts = $derived(baseMetrics.uniqueContracts);
 
-	// Filtered feed
-	let filteredRisks = $derived(
-		risks.filter(r => {
+	// Filtered feed that depends on both 'risks' and filter values
+	let filteredRisks = $derived.by(() => {
+		const filtered: RiskItem[] = [];
+		const searchLower = searchQuery.toLowerCase();
+
+		for (const r of risks) {
 			const matchesSearch = 
-				r.clause_type.toLowerCase().includes(searchQuery.toLowerCase()) ||
-				r.text_content.toLowerCase().includes(searchQuery.toLowerCase()) ||
-				(r.risk_reasoning || '').toLowerCase().includes(searchQuery.toLowerCase()) ||
-				r.contract_filename.toLowerCase().includes(searchQuery.toLowerCase());
+				r.clause_type.toLowerCase().includes(searchLower) ||
+				r.text_content.toLowerCase().includes(searchLower) ||
+				(r.risk_reasoning || '').toLowerCase().includes(searchLower) ||
+				r.contract_filename.toLowerCase().includes(searchLower);
 			
 			const matchesSeverity = 
 				severityFilter === 'ALL' || 
@@ -65,9 +93,13 @@
 				contractFilter === 'ALL' || 
 				r.contract_filename === contractFilter;
 				
-			return matchesSearch && matchesSeverity && matchesClause && matchesContract;
-		})
-	);
+			if (matchesSearch && matchesSeverity && matchesClause && matchesContract) {
+				filtered.push(r);
+			}
+		}
+
+		return filtered;
+	});
 
 	async function fetchRisks(silent = false) {
 		if (!silent) isLoading = true;
