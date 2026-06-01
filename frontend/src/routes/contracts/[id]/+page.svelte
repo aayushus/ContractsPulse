@@ -548,80 +548,86 @@
 		});
 	});
 
+	async function handleRevisionSuccess(response: any, loadingToastId: string, successMessage: string, isText: boolean) {
+		toast.dismiss(loadingToastId);
+		toast.success(successMessage);
+		uploadRevisionModalOpen = false;
+		if (isText) {
+			revisionText = '';
+		} else {
+			revisionFile = null;
+		}
+		const data = await response.json();
+		if (data.contract_id) {
+			goto(`/contracts/${data.contract_id}`);
+		} else {
+			fetchContractDetails();
+			loadVersionChain();
+		}
+	}
+
+	async function handleRevisionFileUpload() {
+		if (!revisionFile) {
+			toast.error('Please select a file first.');
+			return;
+		}
+		isRevisionUploading = true;
+		const formData = new FormData();
+		formData.append('file', revisionFile);
+
+		const loadingToastId = toast.loading(`Uploading revision ${revisionFile.name}...`);
+		try {
+			const response = await apiFetch(`/api/v1/contracts/upload?parent_id=${contractId}`, {
+				method: 'POST',
+				body: formData
+			});
+			if (response.ok) {
+				await handleRevisionSuccess(response, loadingToastId, 'Revision uploaded successfully. AI processing started.', false);
+			} else {
+				throw new Error('Revision upload failed');
+			}
+		} catch (error) {
+			console.error('Revision upload error:', error);
+			toast.dismiss(loadingToastId);
+			toast.error('Failed to upload revision.');
+		} finally {
+			isRevisionUploading = false;
+		}
+	}
+
+	async function handleRevisionTextUpload() {
+		const text = revisionText.trim();
+		if (!text) {
+			toast.error('Please paste contract text first.');
+			return;
+		}
+		isRevisionUploading = true;
+		const loadingToastId = toast.loading('Submitting revision text for analysis...');
+		try {
+			const response = await apiFetch(`/api/v1/contracts/text?parent_id=${contractId}`, {
+				method: 'POST',
+				headers: { 'Content-Type': 'application/json' },
+				body: JSON.stringify({ text })
+			});
+			if (response.ok) {
+				await handleRevisionSuccess(response, loadingToastId, 'Revision text submitted. AI processing started.', true);
+			} else {
+				throw new Error('Revision text submit failed');
+			}
+		} catch (error) {
+			console.error('Revision text submit error:', error);
+			toast.dismiss(loadingToastId);
+			toast.error('Failed to submit revision text.');
+		} finally {
+			isRevisionUploading = false;
+		}
+	}
+
 	async function handleRevisionUpload() {
 		if (revisionInputType === 'file') {
-			if (!revisionFile) {
-				toast.error('Please select a file first.');
-				return;
-			}
-			isRevisionUploading = true;
-			const formData = new FormData();
-			formData.append('file', revisionFile);
-			
-			const loadingToastId = toast.loading(`Uploading revision ${revisionFile.name}...`);
-			try {
-				const response = await apiFetch(`/api/v1/contracts/upload?parent_id=${contractId}`, {
-					method: 'POST',
-					body: formData
-				});
-				if (response.ok) {
-					toast.dismiss(loadingToastId);
-					toast.success('Revision uploaded successfully. AI processing started.');
-					uploadRevisionModalOpen = false;
-					revisionFile = null;
-					const data = await response.json();
-					if (data.contract_id) {
-						goto(`/contracts/${data.contract_id}`);
-					} else {
-						fetchContractDetails();
-						loadVersionChain();
-					}
-				} else {
-					throw new Error('Revision upload failed');
-				}
-			} catch (error) {
-				console.error('Revision upload error:', error);
-				toast.dismiss(loadingToastId);
-				toast.error('Failed to upload revision.');
-			} finally {
-				isRevisionUploading = false;
-			}
+			await handleRevisionFileUpload();
 		} else {
-			const text = revisionText.trim();
-			if (!text) {
-				toast.error('Please paste contract text first.');
-				return;
-			}
-			isRevisionUploading = true;
-			const loadingToastId = toast.loading('Submitting revision text for analysis...');
-			try {
-				const response = await apiFetch(`/api/v1/contracts/text?parent_id=${contractId}`, {
-					method: 'POST',
-					headers: { 'Content-Type': 'application/json' },
-					body: JSON.stringify({ text })
-				});
-				if (response.ok) {
-					toast.dismiss(loadingToastId);
-					toast.success('Revision text submitted. AI processing started.');
-					uploadRevisionModalOpen = false;
-					revisionText = '';
-					const data = await response.json();
-					if (data.contract_id) {
-						goto(`/contracts/${data.contract_id}`);
-					} else {
-						fetchContractDetails();
-						loadVersionChain();
-					}
-				} else {
-					throw new Error('Revision text submit failed');
-				}
-			} catch (error) {
-				console.error('Revision text submit error:', error);
-				toast.dismiss(loadingToastId);
-				toast.error('Failed to submit revision text.');
-			} finally {
-				isRevisionUploading = false;
-			}
+			await handleRevisionTextUpload();
 		}
 	}
 
