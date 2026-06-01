@@ -515,14 +515,18 @@ async def verify_previous_redlines(parent_clauses: list, new_clauses: list, use_
     # We only care about high/critical risks in the parent contract
     parent_risks = [c for c in parent_clauses if (c.risk_level.value if hasattr(c.risk_level, "value") else str(c.risk_level)) in {"HIGH", "CRITICAL"}]
     
+    # Create a dictionary for O(1) lookup of new clauses by clause_type
+    nc_dict = {}
+    for nc in new_clauses:
+        nc_type = nc.clause_type if hasattr(nc, "clause_type") else (nc.get("clause") if isinstance(nc, dict) else nc).clause_type
+        nc_type_key = nc_type.lower().strip()
+        if nc_type_key not in nc_dict:
+            nc_dict[nc_type_key] = nc
+
     for pc in parent_risks:
         # Find matching new clause of same type (case-insensitive)
-        matched_nc = None
-        for nc in new_clauses:
-            nc_type = nc.clause_type if hasattr(nc, "clause_type") else (nc.get("clause") if isinstance(nc, dict) else nc).clause_type
-            if nc_type.lower().strip() == pc.clause_type.lower().strip():
-                matched_nc = nc
-                break
+        pc_type_key = pc.clause_type.lower().strip()
+        matched_nc = nc_dict.get(pc_type_key)
                 
         # If no exact match, skip or take a best-effort candidate
         if not matched_nc and new_clauses:

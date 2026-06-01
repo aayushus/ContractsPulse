@@ -517,15 +517,15 @@ async def analyze_contract_background(contract_id: str, raw_text: str):
                 # Check for parent and run redline verification
                 parent_id = existing.get("parent_contract_id")
                 if parent_id:
-                    parent_contract = db.query(Contract).filter(Contract.id == parent_id).first()
-                    if parent_contract:
+                    # Fetch parent contract clauses
+                    parent_clauses = db.query(ContractClause).filter(ContractClause.contract_id == parent_id).all()
+
+                    if parent_clauses:
                         # Update status callback to keep client informed
                         existing["processing_step"] = "Verifying resolved redlines against parent version..."
                         contract.metadata_json = existing
                         db.commit()
                         
-                        # Fetch parent contract clauses
-                        parent_clauses = db.query(ContractClause).filter(ContractClause.contract_id == parent_id).all()
                         # Fetch current contract clauses
                         new_clauses = db.query(ContractClause).filter(ContractClause.contract_id == contract_id).all()
                         
@@ -542,12 +542,16 @@ async def analyze_contract_background(contract_id: str, raw_text: str):
                                 from .agents import _heuristic_verify_redline
                                 resolutions = []
                                 parent_risks = [c for c in parent_clauses if (c.risk_level.value if hasattr(c.risk_level, "value") else str(c.risk_level)) in {"HIGH", "CRITICAL"}]
+
+                                nc_dict = {}
+                                for nc in new_clauses:
+                                    nc_type_key = nc.clause_type.lower().strip()
+                                    if nc_type_key not in nc_dict:
+                                        nc_dict[nc_type_key] = nc
+
                                 for pc in parent_risks:
-                                    matched_nc = None
-                                    for nc in new_clauses:
-                                        if nc.clause_type.lower().strip() == pc.clause_type.lower().strip():
-                                            matched_nc = nc
-                                            break
+                                    pc_type_key = pc.clause_type.lower().strip()
+                                    matched_nc = nc_dict.get(pc_type_key)
                                     if not matched_nc and new_clauses:
                                         matched_nc = new_clauses[0]
                                     
