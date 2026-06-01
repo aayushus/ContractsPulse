@@ -18,7 +18,9 @@ from opentelemetry.exporter.otlp.proto.grpc.trace_exporter import OTLPSpanExport
 from opentelemetry.sdk.resources import Resource
 
 # Security & JWT settings
-JWT_SECRET = os.getenv("JWT_SECRET", "super-secret-contractspulse-key-change-it")
+JWT_SECRET = os.getenv("JWT_SECRET")
+if not JWT_SECRET:
+    raise ValueError("JWT_SECRET environment variable must be set for security reasons.")
 JWT_ALGORITHM = "HS256"
 ACCESS_TOKEN_EXPIRE_MINUTES = 60 * 24 * 7 # 1 week
 def is_signup_disabled() -> bool:
