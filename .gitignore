@@ -19,3 +19,4 @@ backend/.pytest_cache/
 
 # Logs
 *.log
+venv/
