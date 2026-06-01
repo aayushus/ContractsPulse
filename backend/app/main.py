@@ -5,7 +5,6 @@ import re
 from datetime import datetime, timedelta, timezone
 from fastapi import FastAPI, UploadFile, File, BackgroundTasks, HTTPException, Depends, Header
 from fastapi.middleware.cors import CORSMiddleware
-from sse_starlette.sse import EventSourceResponse
 from pydantic import BaseModel
 from sqlalchemy.orm import Session
 from sqlalchemy import text
