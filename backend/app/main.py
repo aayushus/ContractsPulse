@@ -426,13 +426,166 @@ def save_analysis_results(db: Session, contract_id: str, analysis_results: list)
     contract.metadata_json = {**existing, "risk_counts": risk_counts, "top_risks": top_risks}
     db.commit()
 
+async def _run_analysis_pipeline(contract_id: str, raw_text: str, update_status):
+    import asyncio
+    import os
+    from .database import SessionLocal
+    from .agents import process_contract_text, process_contract_text_fallback
+
+    timeout_s = float(os.getenv("CONTRACT_ANALYSIS_TIMEOUT_S", "60"))
+    try:
+        db0 = SessionLocal()
+        try:
+            log_contract_event(db0, contract_id, "analysis", "LLM analysis started", {"timeout_s": timeout_s})
+            db0.commit()
+        finally:
+            db0.close()
+        analysis_results = await asyncio.wait_for(
+            process_contract_text(raw_text, update_status),
+            timeout=timeout_s,
+        )
+        analysis_meta = {"analysis_mode": "llm"}
+    except asyncio.TimeoutError:
+        db0 = SessionLocal()
+        try:
+            log_contract_event(db0, contract_id, "analysis", "LLM timed out; using heuristic fallback", {"timeout_s": timeout_s})
+            db0.commit()
+        finally:
+            db0.close()
+        # Provider/network hang; fall back to deterministic processing so the pipeline completes.
+        analysis_results = await process_contract_text_fallback(raw_text, update_status)
+        analysis_meta = {"analysis_mode": "heuristic_fallback", "llm_timeout_s": timeout_s}
+    return analysis_results, analysis_meta
+
+
+async def _generate_clause_embeddings(db, contract, contract_id: str):
+    import os
+    from .models import ContractClause
+    existing = contract.metadata_json or {}
+    try:
+        existing["processing_step"] = "Generating clause embeddings for semantic search..."
+        contract.metadata_json = existing
+        db.commit()
+
+        clauses = db.query(ContractClause).filter(ContractClause.contract_id == contract_id).all()
+        if clauses:
+            texts = [c.text_content for c in clauses]
+            import openai
+            client = openai.AsyncOpenAI(api_key=os.getenv("OPENAI_API_KEY"))
+            embeddings = []
+            for i in range(0, len(texts), 100):
+                chunk = texts[i:i+100]
+                res = await client.embeddings.create(
+                    model="text-embedding-3-small",
+                    input=chunk
+                )
+                embeddings.extend([item.embedding for item in res.data])
+
+            if len(embeddings) == len(clauses):
+                for clause, emb in zip(clauses, embeddings):
+                    clause.embedding = emb
+                db.commit()
+                print(f"Successfully generated and saved embeddings for {len(clauses)} clauses.")
+            else:
+                print(f"Warning: Count mismatch in embeddings generation: {len(embeddings)} vs {len(clauses)}")
+    except Exception as emb_err:
+        print(f"Failed to generate clause embeddings: {emb_err}")
+
+
+async def _verify_contract_redlines(db, contract, contract_id: str, analysis_meta: dict):
+    from .models import ContractClause
+    existing = contract.metadata_json or {}
+    parent_id = existing.get("parent_contract_id")
+    if parent_id:
+        # Fetch parent contract clauses
+        parent_clauses = db.query(ContractClause).filter(ContractClause.contract_id == parent_id).all()
+
+        if parent_clauses:
+            # Update status callback to keep client informed
+            existing["processing_step"] = "Verifying resolved redlines against parent version..."
+            contract.metadata_json = existing
+            db.commit()
+
+            # Fetch current contract clauses
+            new_clauses = db.query(ContractClause).filter(ContractClause.contract_id == contract_id).all()
+
+            # Run redline verification
+            use_llm = analysis_meta.get("analysis_mode") == "llm"
+            try:
+                from .agents import verify_previous_redlines
+                redline_resolutions = await verify_previous_redlines(parent_clauses, new_clauses, use_llm=use_llm)
+                existing = contract.metadata_json or {}
+                existing["redline_resolutions"] = redline_resolutions
+            except Exception as ve:
+                print(f"Error during redline verification: {ve}")
+                # Fallback using heuristic verifier manually
+                try:
+                    from .agents import _heuristic_verify_redline
+                    resolutions = []
+                    parent_risks = [c for c in parent_clauses if (c.risk_level.value if hasattr(c.risk_level, "value") else str(c.risk_level)) in {"HIGH", "CRITICAL"}]
+
+                    nc_dict = {}
+                    for nc in new_clauses:
+                        nc_type_key = nc.clause_type.lower().strip()
+                        if nc_type_key not in nc_dict:
+                            nc_dict[nc_type_key] = nc
+
+                    for pc in parent_risks:
+                        pc_type_key = pc.clause_type.lower().strip()
+                        matched_nc = nc_dict.get(pc_type_key)
+                        if not matched_nc and new_clauses:
+                            matched_nc = new_clauses[0]
+
+                        new_text = matched_nc.text_content if matched_nc else ""
+                        nc_id = str(matched_nc.id) if matched_nc else ""
+                        status, new_risk_level, details = _heuristic_verify_redline(pc.text_content, pc.redline_suggestion or "", new_text)
+                        resolutions.append({
+                            "clause_type": pc.clause_type,
+                            "parent_clause_id": str(pc.id),
+                            "parent_text": pc.text_content,
+                            "parent_risk_level": pc.risk_level.value if hasattr(pc.risk_level, "value") else str(pc.risk_level),
+                            "parent_redline_suggestion": pc.redline_suggestion or "",
+                            "new_clause_id": nc_id,
+                            "new_text": new_text,
+                            "new_risk_level": new_risk_level,
+                            "status": status,
+                            "verification_details": details
+                        })
+                    existing = contract.metadata_json or {}
+                    existing["redline_resolutions"] = resolutions
+                except Exception as he:
+                    print(f"Deep fallback verification failed: {he}")
+
+
+async def _extract_and_save_obligations(contract, raw_text: str):
+    existing = contract.metadata_json or {}
+    try:
+        from .agents import extract_contract_obligations
+        obligation_result = await extract_contract_obligations(raw_text)
+        obligations_data = [
+            {
+                "title": o.title,
+                "description": o.description,
+                "party_responsible": o.party_responsible,
+                "due_trigger": o.due_trigger,
+                "category": o.category,
+            }
+            for o in obligation_result.obligations
+        ]
+        existing["obligations"] = obligations_data
+    except Exception as oe:
+        print(f"Obligation extraction failed (non-fatal): {oe}")
+        existing["obligations"] = []
+
+
 async def analyze_contract_background(contract_id: str, raw_text: str):
     print(f"Background task started for contract: {contract_id}")
     
     try:
+        from .models import Contract, ContractStatus
+        from .database import SessionLocal
         # Define callback to update detailed step
         async def update_status(step_msg: str):
-            from .database import SessionLocal
             db_tmp = SessionLocal()
             try:
                 c = db_tmp.query(Contract).filter(Contract.id == contract_id).first()
@@ -445,155 +598,25 @@ async def analyze_contract_background(contract_id: str, raw_text: str):
                 db_tmp.close()
 
         # 1. Run the Pydantic AI graph.
-        # Guard against provider/network hangs so contracts don't sit in PROCESSING forever.
-        import asyncio
-        timeout_s = float(os.getenv("CONTRACT_ANALYSIS_TIMEOUT_S", "60"))
-        try:
-            from .database import SessionLocal
-            db0 = SessionLocal()
-            try:
-                log_contract_event(db0, contract_id, "analysis", "LLM analysis started", {"timeout_s": timeout_s})
-                db0.commit()
-            finally:
-                db0.close()
-            analysis_results = await asyncio.wait_for(
-                process_contract_text(raw_text, update_status),
-                timeout=timeout_s,
-            )
-            analysis_meta = {"analysis_mode": "llm"}
-        except asyncio.TimeoutError:
-            from .database import SessionLocal
-            db0 = SessionLocal()
-            try:
-                log_contract_event(db0, contract_id, "analysis", "LLM timed out; using heuristic fallback", {"timeout_s": timeout_s})
-                db0.commit()
-            finally:
-                db0.close()
-            # Provider/network hang; fall back to deterministic processing so the pipeline completes.
-            analysis_results = await process_contract_text_fallback(raw_text, update_status)
-            analysis_meta = {"analysis_mode": "heuristic_fallback", "llm_timeout_s": timeout_s}
+        analysis_results, analysis_meta = await _run_analysis_pipeline(contract_id, raw_text, update_status)
         
         # 2. Save to DB (Postgres/pgvector)
-        from .database import SessionLocal
         db = SessionLocal()
         try:
             save_analysis_results(db, contract_id, analysis_results)
             # Mark which analysis mode was used.
             contract = db.query(Contract).filter(Contract.id == contract_id).first()
             if contract:
-                existing = contract.metadata_json or {}
-                
                 # Story: Generate embeddings for semantic search
-                try:
-                    existing["processing_step"] = "Generating clause embeddings for semantic search..."
-                    contract.metadata_json = existing
-                    db.commit()
-                    
-                    clauses = db.query(ContractClause).filter(ContractClause.contract_id == contract_id).all()
-                    if clauses:
-                        texts = [c.text_content for c in clauses]
-                        import openai
-                        client = openai.AsyncOpenAI(api_key=os.getenv("OPENAI_API_KEY"))
-                        embeddings = []
-                        for i in range(0, len(texts), 100):
-                            chunk = texts[i:i+100]
-                            res = await client.embeddings.create(
-                                model="text-embedding-3-small",
-                                input=chunk
-                            )
-                            embeddings.extend([item.embedding for item in res.data])
-                        
-                        if len(embeddings) == len(clauses):
-                            for clause, emb in zip(clauses, embeddings):
-                                clause.embedding = emb
-                            db.commit()
-                            print(f"Successfully generated and saved embeddings for {len(clauses)} clauses.")
-                        else:
-                            print(f"Warning: Count mismatch in embeddings generation: {len(embeddings)} vs {len(clauses)}")
-                except Exception as emb_err:
-                    print(f"Failed to generate clause embeddings: {emb_err}")
-                
-                existing = contract.metadata_json or {}
+                await _generate_clause_embeddings(db, contract, contract_id)
                 
                 # Check for parent and run redline verification
-                parent_id = existing.get("parent_contract_id")
-                if parent_id:
-                    # Fetch parent contract clauses
-                    parent_clauses = db.query(ContractClause).filter(ContractClause.contract_id == parent_id).all()
-
-                    if parent_clauses:
-                        # Update status callback to keep client informed
-                        existing["processing_step"] = "Verifying resolved redlines against parent version..."
-                        contract.metadata_json = existing
-                        db.commit()
-                        
-                        # Fetch current contract clauses
-                        new_clauses = db.query(ContractClause).filter(ContractClause.contract_id == contract_id).all()
-                        
-                        # Run redline verification
-                        use_llm = analysis_meta.get("analysis_mode") == "llm"
-                        try:
-                            redline_resolutions = await verify_previous_redlines(parent_clauses, new_clauses, use_llm=use_llm)
-                            existing = contract.metadata_json or {}
-                            existing["redline_resolutions"] = redline_resolutions
-                        except Exception as ve:
-                            print(f"Error during redline verification: {ve}")
-                            # Fallback using heuristic verifier manually
-                            try:
-                                from .agents import _heuristic_verify_redline
-                                resolutions = []
-                                parent_risks = [c for c in parent_clauses if (c.risk_level.value if hasattr(c.risk_level, "value") else str(c.risk_level)) in {"HIGH", "CRITICAL"}]
-
-                                nc_dict = {}
-                                for nc in new_clauses:
-                                    nc_type_key = nc.clause_type.lower().strip()
-                                    if nc_type_key not in nc_dict:
-                                        nc_dict[nc_type_key] = nc
-
-                                for pc in parent_risks:
-                                    pc_type_key = pc.clause_type.lower().strip()
-                                    matched_nc = nc_dict.get(pc_type_key)
-                                    if not matched_nc and new_clauses:
-                                        matched_nc = new_clauses[0]
-                                    
-                                    new_text = matched_nc.text_content if matched_nc else ""
-                                    nc_id = str(matched_nc.id) if matched_nc else ""
-                                    status, new_risk_level, details = _heuristic_verify_redline(pc.text_content, pc.redline_suggestion or "", new_text)
-                                    resolutions.append({
-                                        "clause_type": pc.clause_type,
-                                        "parent_clause_id": str(pc.id),
-                                        "parent_text": pc.text_content,
-                                        "parent_risk_level": pc.risk_level.value if hasattr(pc.risk_level, "value") else str(pc.risk_level),
-                                        "parent_redline_suggestion": pc.redline_suggestion or "",
-                                        "new_clause_id": nc_id,
-                                        "new_text": new_text,
-                                        "new_risk_level": new_risk_level,
-                                        "status": status,
-                                        "verification_details": details
-                                    })
-                                existing = contract.metadata_json or {}
-                                existing["redline_resolutions"] = resolutions
-                            except Exception as he:
-                                print(f"Deep fallback verification failed: {he}")
+                await _verify_contract_redlines(db, contract, contract_id, analysis_meta)
                 
                 # Run obligation extraction
-                try:
-                    obligation_result = await extract_contract_obligations(raw_text)
-                    obligations_data = [
-                        {
-                            "title": o.title,
-                            "description": o.description,
-                            "party_responsible": o.party_responsible,
-                            "due_trigger": o.due_trigger,
-                            "category": o.category,
-                        }
-                        for o in obligation_result.obligations
-                    ]
-                    existing["obligations"] = obligations_data
-                except Exception as oe:
-                    print(f"Obligation extraction failed (non-fatal): {oe}")
-                    existing["obligations"] = []
+                await _extract_and_save_obligations(contract, raw_text)
 
+                existing = contract.metadata_json or {}
                 contract.metadata_json = {**existing, **analysis_meta}
                 log_contract_event(db, contract_id, "analysis", "Analysis completed", analysis_meta)
                 db.commit()
@@ -603,6 +626,7 @@ async def analyze_contract_background(contract_id: str, raw_text: str):
             
     except Exception as e:
         print(f"Error in background task: {e}")
+        from .models import Contract, ContractStatus
         from .database import SessionLocal
         db = SessionLocal()
         try:
