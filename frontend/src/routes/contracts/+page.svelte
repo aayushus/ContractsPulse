@@ -355,6 +355,7 @@
 					placeholder="Search files by name..." 
 					bind:value={searchQuery}
 					class="contract-search-bar"
+					aria-label="Search contracts by name"
 				/>
 			</div>
 
@@ -558,6 +559,7 @@
 					class="input-field mono-textarea"
 					rows="14"
 					placeholder="Paste contract text here..."
+					aria-label="Paste contract text"
 				></textarea>
 			</div>
 			<div class="modal-footer flex-end gap-12">
