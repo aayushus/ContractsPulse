@@ -1,0 +1,1 @@
+## 2024-06-05 - Added ARIA label to revision upload modal file removal button\n**Learning:** Icon-only buttons for clearing selected files in modals often miss accessibility labels, making them invisible to screen readers.\n**Action:** Always check `.btn-remove-file` or similar icon-only buttons for `aria-label` and `title` attributes.
