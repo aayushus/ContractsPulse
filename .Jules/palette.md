@@ -1,1 +1,4 @@
 ## 2024-06-05 - Added ARIA label to revision upload modal file removal button\n**Learning:** Icon-only buttons for clearing selected files in modals often miss accessibility labels, making them invisible to screen readers.\n**Action:** Always check `.btn-remove-file` or similar icon-only buttons for `aria-label` and `title` attributes.
+## 2024-05-18 - Added keyboard interaction for upload dropzone
+**Learning:** Svelte-check explicitly warns about missing keyboard interactions and roles for clickable `div` elements (`a11y_click_events_have_key_events`, `a11y_no_static_element_interactions`). Users rely on keyboard navigation for interactive dropzones.
+**Action:** When creating a clickable file upload dropzone using a `div`, always add `role="button"`, `tabindex="0"`, and an `onkeydown` handler to allow keyboard activation (e.g., Space or Enter keys) alongside the mouse `onclick` event.

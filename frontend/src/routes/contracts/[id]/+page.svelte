@@ -1716,7 +1716,7 @@
 				</div>
 
 				{#if revisionInputType === 'file'}
-					<div class="upload-dropzone" onclick={() => revisionFileInput?.click()}>
+					<div class="upload-dropzone" role="button" tabindex="0" onclick={() => revisionFileInput?.click()} onkeydown={(e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); revisionFileInput?.click(); } }}>
 						<input type="file" bind:this={revisionFileInput} onchange={(e) => {
 							const target = e.target as HTMLInputElement;
 							if (target.files && target.files.length > 0) {
