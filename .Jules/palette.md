@@ -1,1 +1,4 @@
 ## 2024-06-05 - Added ARIA label to revision upload modal file removal button\n**Learning:** Icon-only buttons for clearing selected files in modals often miss accessibility labels, making them invisible to screen readers.\n**Action:** Always check `.btn-remove-file` or similar icon-only buttons for `aria-label` and `title` attributes.
+## 2025-06-15 - Svelte a11y Dropzone Warnings
+**Learning:** Found an accessibility issue pattern specific to this app's components: interactive non-button elements (like `div` file dropzones) used with `onclick` must explicitly include `role="button"`, `tabindex="0"`, and a keyboard event handler (`onkeydown` for Enter/Space keys) to satisfy Svelte's strict a11y checks (`a11y_click_events_have_key_events`, `a11y_no_static_element_interactions`).
+**Action:** Always check `svelte-check` diagnostics after modifying or creating interactive `div` elements, and ensure they have keyboard access if they behave like buttons.
