@@ -233,6 +233,7 @@
 					placeholder="Search risks by keyword, type, or contract..." 
 					bind:value={searchQuery}
 					class="risk-search-bar"
+					aria-label="Search risks by keyword, type, or contract"
 				/>
 			</div>
 

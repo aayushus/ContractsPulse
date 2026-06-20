@@ -321,6 +321,7 @@
 					placeholder="Ask Sage…"
 					bind:value={assistantInput}
 					disabled={assistantLoading}
+					aria-label="Ask Sage assistant"
 					onkeydown={(e) => { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); sendAssistant(); } }}
 				></textarea>
 				<button class="btn btn-primary assistant-send" type="button" onclick={sendAssistant} disabled={assistantLoading || !assistantInput.trim()} aria-label="Send">

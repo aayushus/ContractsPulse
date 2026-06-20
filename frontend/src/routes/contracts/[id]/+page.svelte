@@ -1146,6 +1146,7 @@
 									placeholder="Search clauses by keyword..." 
 									bind:value={clauseSearchQuery}
 									class="clause-search-bar"
+									aria-label="Search clauses by keyword"
 								/>
 							</div>
 
@@ -1335,6 +1336,7 @@
 								placeholder="Ask a question…"
 								bind:value={chatInput}
 								disabled={isChatLoading}
+								aria-label="Ask a question"
 								onkeydown={(e) => { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); sendChat(); } }}
 							></textarea>
 							<button class="btn btn-primary chat-send" onclick={sendChat} disabled={isChatLoading || !chatInput.trim()} aria-label="Send question">

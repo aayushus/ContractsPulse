@@ -1,5 +1,23 @@
+import sys
+import os
 import pytest
-from app.main import _compute_overall_risk
+
+sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
+
+from fastapi.testclient import TestClient
+from app.main import _compute_overall_risk, app
+
+client = TestClient(app)
+
+def test_root_endpoint():
+    response = client.get("/")
+    assert response.status_code == 200
+    assert response.json() == {"message": "ContractsPulse API is running"}
+
+def test_health_check_endpoint():
+    response = client.get("/health")
+    assert response.status_code == 200
+    assert response.json() == {"status": "ok"}
 
 def test_compute_overall_risk_empty():
     assert _compute_overall_risk({}) == "LOW"
