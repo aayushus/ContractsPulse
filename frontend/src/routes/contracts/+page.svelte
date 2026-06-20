@@ -412,14 +412,27 @@
 		{/if}
 
 		{#each filteredContracts as contract, i}
-			<!-- svelte-ignore a11y_click_events_have_key_events -->
-			<!-- svelte-ignore a11y_no_static_element_interactions -->
-			<div class="table-row clickable-row stagger-entry" style="--index: {i}" onclick={(e: MouseEvent) => {
-				const target = e.target as HTMLElement | null;
-				if (!target || !target.closest('.btn-icon') && !target.closest('.btn-inline')) {
-					goto(`/contracts/${contract.id}`);
-				}
-			}}>
+			<div
+				class="table-row clickable-row stagger-entry"
+				style="--index: {i}"
+				role="button"
+				tabindex="0"
+				onclick={(e: MouseEvent) => {
+					const target = e.target as HTMLElement | null;
+					if (!target || !target.closest('.btn-icon') && !target.closest('.btn-inline')) {
+						goto(`/contracts/${contract.id}`);
+					}
+				}}
+				onkeydown={(e: KeyboardEvent) => {
+					if (e.key === 'Enter' || e.key === ' ') {
+						const target = e.target as HTMLElement | null;
+						if (!target || !target.closest('.btn-icon') && !target.closest('.btn-inline')) {
+							e.preventDefault();
+							goto(`/contracts/${contract.id}`);
+						}
+					}
+				}}
+			>
 				<!-- Name column -->
 				<div class="col col-name" style="min-width: 0;">
 					<svg class="file-icon" style="flex-shrink: 0;" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/></svg>

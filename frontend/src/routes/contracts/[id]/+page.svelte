@@ -1182,14 +1182,23 @@
 							<div class="clauses-list">
 								{#each filteredClauses as clause (clause.id)}
 									{@const isExpanded = expandedClauses[clause.id]}
-									<!-- svelte-ignore a11y_click_events_have_key_events -->
-									<!-- svelte-ignore a11y_no_static_element_interactions -->
 									<div 
 										id="clause-card-{clause.id}"
 										class="clause-interactive-card risk-{clause.risk_level.toLowerCase()} {isExpanded ? 'expanded' : ''} {selectedClauseId === clause.id || hoveredClauseId === clause.id ? 'active-card' : ''}" 
+										role="button"
+										tabindex="0"
 										onmouseenter={() => { hoveredClauseId = clause.id; }}
 										onmouseleave={() => { if (hoveredClauseId === clause.id) hoveredClauseId = null; }}
 										onclick={() => handleClauseCardClick(clause.id)}
+										onkeydown={(e: KeyboardEvent) => {
+											if (e.key === 'Enter' || e.key === ' ') {
+												const target = e.target as HTMLElement | null;
+												if (!target || !target.closest('button')) {
+													e.preventDefault();
+													handleClauseCardClick(clause.id);
+												}
+											}
+										}}
 									>
 										<div class="clause-interactive-header">
 											<div class="flex-row gap-8">
