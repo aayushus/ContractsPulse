@@ -1216,7 +1216,7 @@
 										</div>
 
 										{#if isExpanded}
-											<div class="clause-expanded-section" onclick={(e) => e.stopPropagation()}>
+											<div class="clause-expanded-section" role="presentation" onclick={(e) => e.stopPropagation()} onkeydown={(e) => e.stopPropagation()}>
 												<div class="clause-reasoning">
 													<strong>Rationale:</strong> {clause.risk_reasoning || 'Flagged for strict visual audit.'}
 												</div>
@@ -1235,7 +1235,7 @@
 
 												{#if clause.risk_debug_json && Object.keys(clause.risk_debug_json).length}
 													<!-- svelte-ignore a11y_no_noninteractive_element_interactions -->
-													<details class="clause-tech" onclick={(e) => e.stopPropagation()}>
+													<details class="clause-tech" onclick={(e) => e.stopPropagation()} onkeydown={(e) => e.stopPropagation()}>
 														<summary class="font-medium text-xs text-secondary cursor-pointer">Technical Details</summary>
 														<div class="tech-grid">
 															<div class="tech-row">
