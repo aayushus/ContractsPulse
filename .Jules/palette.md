@@ -1,3 +1,6 @@
 ## 2026-06-20 - Native Keyboard Support over Svelte-Ignore
 **Learning:** Svelte 5's accessibility checks for `a11y_click_events_have_key_events` and `a11y_no_static_element_interactions` shouldn't just be silenced with ignore comments. The framework correctly highlights that any interactive element (like list rows or cards) handling `onclick` needs full keyboard support. Relying solely on mouse events excludes users relying on tab navigation.
 **Action:** Always complement `onclick` handlers on non-native interactive elements (like `div`s acting as cards/rows) with `role="button"`, `tabindex="0"`, and an `onkeydown` listener that triggers the identical action on 'Enter' or Space bar presses.
+## 2026-06-22 - Svelte 5 Accessibility Warnings for Event Bubbling Preventers
+**Learning:** When adding `onclick={(e) => e.stopPropagation()}` to non-interactive elements purely to prevent event bubbling, Svelte will flag strict accessibility warnings (`a11y_click_events_have_key_events`, `a11y_no_static_element_interactions`).
+**Action:** Add `role="presentation"` and an equivalent `onkeydown={(e) => e.stopPropagation()}` to explicitly define the element as presentational while satisfying the keyboard event listener requirement.
