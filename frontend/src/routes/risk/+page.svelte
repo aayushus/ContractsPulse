@@ -370,9 +370,18 @@
 					<!-- Redline Suggested Drawer -->
 					{#if r.redline_suggestion}
 						<div class="redline-drawer" class:open={isExpanded}>
-							<!-- svelte-ignore a11y_click_events_have_key_events -->
-							<!-- svelte-ignore a11y_no_static_element_interactions -->
-							<div class="redline-toggle flex-between" onclick={() => toggleRedline(r.id)}>
+							<div
+								class="redline-toggle flex-between"
+								role="button"
+								tabindex="0"
+								onclick={() => toggleRedline(r.id)}
+								onkeydown={(e) => {
+									if (e.key === 'Enter' || e.key === ' ') {
+										e.preventDefault();
+										toggleRedline(r.id);
+									}
+								}}
+							>
 								<span class="flex-row gap-6 font-semibold">
 									<svg class="chevron-icon" class:rotated={isExpanded} width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="9 18 15 12 9 6"/></svg>
 									Suggested Alternative (Redline)
