@@ -14,7 +14,7 @@ sse-starlette>=1.8.2
 python-multipart==0.0.30
 unstructured==0.20.8
 PyMuPDF==1.26.7
-openai==1.54.3
+openai==2.30.0
 PyJWT>=2.8.0
 bcrypt>=4.0.1
 

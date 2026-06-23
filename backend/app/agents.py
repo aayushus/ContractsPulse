@@ -38,7 +38,7 @@ class RiskAnalysisResult(BaseModel):
 # Agent 1: The Extractor
 # Responsible for taking unstructured text and breaking it into logical clauses.
 extractor_agent = Agent(
-    os.getenv("OPENAI_MODEL_EXTRACTOR", "openai-chat:gpt-4.1-mini"),
+    os.getenv("OPENAI_MODEL_EXTRACTOR", "openai:gpt-4.1-mini"),
     output_type=ContractExtractionResult,
     retries=3,
     system_prompt=(
@@ -51,7 +51,7 @@ extractor_agent = Agent(
 # Agent 2: The Risk Assessor
 # Responsible for evaluating a single clause for potential liabilities.
 risk_agent = Agent(
-    os.getenv("OPENAI_MODEL_RISK", "openai-chat:gpt-4.1"),
+    os.getenv("OPENAI_MODEL_RISK", "openai:gpt-4.1"),
     output_type=RiskAnalysisResult,
     retries=3,
     system_prompt=(
@@ -82,7 +82,7 @@ class RedlineVerification(BaseModel):
     verification_details: str = Field(description="A concise plain-English explanation of why this status was chosen. Be specific about what was changed or what risks remain.")
 
 redline_verifier_agent = Agent(
-    os.getenv("OPENAI_MODEL_RISK", "openai-chat:gpt-4.1"),
+    os.getenv("OPENAI_MODEL_RISK", "openai:gpt-4.1"),
     output_type=RedlineVerification,
     retries=3,
     system_prompt=(
@@ -110,7 +110,7 @@ class ObligationExtractionResult(BaseModel):
     obligations: List[ObligationItem] = Field(description="All actionable obligations extracted from the contract. Focus on concrete, time-bound, or triggered duties.")
 
 obligation_agent = Agent(
-    os.getenv("OPENAI_MODEL_EXTRACTOR", "openai-chat:gpt-4.1-mini"),
+    os.getenv("OPENAI_MODEL_EXTRACTOR", "openai:gpt-4.1-mini"),
     output_type=ObligationExtractionResult,
     retries=2,
     system_prompt=(
@@ -186,7 +186,7 @@ async def process_contract_text(raw_text: str, update_status_callback=None):
         }
         composite = max(dims.values()) if dims else 0.0
         risk_result.debug_json = {
-            "model": os.getenv("OPENAI_MODEL_RISK", "openai-chat:gpt-4.1"),
+            "model": os.getenv("OPENAI_MODEL_RISK", "openai:gpt-4.1"),
             "latency_ms": latency_ms,
             "dimensions": dims,
             "composite_score": round(composite, 4),
