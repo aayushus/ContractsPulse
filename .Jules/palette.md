@@ -4,3 +4,6 @@
 ## 2026-06-22 - Svelte 5 Accessibility Warnings for Event Bubbling Preventers
 **Learning:** When adding `onclick={(e) => e.stopPropagation()}` to non-interactive elements purely to prevent event bubbling, Svelte will flag strict accessibility warnings (`a11y_click_events_have_key_events`, `a11y_no_static_element_interactions`).
 **Action:** Add `role="presentation"` and an equivalent `onkeydown={(e) => e.stopPropagation()}` to explicitly define the element as presentational while satisfying the keyboard event listener requirement.
+## 2026-06-23 - Native Keyboard Support over Svelte-Ignore (Redline Toggle)
+**Learning:** Similar to list rows, interactive toggles (like the redline drawer toggle) built with `div`s that use `onclick` often have their accessibility warnings silenced via `svelte-ignore`. This hides the fact that they cannot be toggled via keyboard.
+**Action:** Instead of ignoring these warnings, convert the `div` into a fully accessible interactive element by adding `role="button"`, `tabindex="0"`, and an `onkeydown` handler for 'Enter' and 'Space'.
