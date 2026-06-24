@@ -165,13 +165,24 @@
 		border-radius: 10px;
 		border: 1px solid var(--border-subtle);
 		background: var(--bg-panel);
+		color: inherit;
+		text-align: left;
 		cursor: pointer;
+		transition: background 150ms ease, border-color 150ms ease;
 	}
 	.vendor-contract:hover {
 		background: var(--bg-active);
+		border-color: var(--border-strong);
+	}
+	.vc-left {
+		min-width: 0;
 	}
 	.vc-name {
 		font-weight: 550;
+		color: var(--text-primary);
+		white-space: nowrap;
+		overflow: hidden;
+		text-overflow: ellipsis;
 	}
 	.vc-meta {
 		font-size: 12px;

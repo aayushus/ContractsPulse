@@ -202,6 +202,19 @@ body {
   -moz-osx-font-smoothing: grayscale;
 }
 
+/* Form controls don't inherit font/color from their parent by default, so an
+   unstyled <button>/<input>/<select> falls back to the UA default (dark) text.
+   That text becomes invisible on dark backgrounds. Inheriting here makes every
+   control theme-aware by default; component classes (.btn-primary, etc.) that
+   set their own color still win on specificity. */
+button,
+input,
+select,
+textarea {
+  font-family: inherit;
+  color: inherit;
+}
+
 /* Shared UI primitives */
 .card {
   background: var(--bg-panel);
