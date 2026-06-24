@@ -1,15 +1,92 @@
-# 📑 ContractsPulse
+<div align="center">
 
-**ContractsPulse** is an advanced contract intelligence and analysis platform designed to streamline legal and procurement workflows. By leveraging state-of-the-art AI orchestration and modern design engineering, it enables rapid extraction, analysis, and management of complex contractual documents.
+<img src="frontend/static/favicon.svg" alt="ContractsPulse logo" width="92" height="92" />
+
+# ContractsPulse
+
+**AI-powered contract intelligence — extract, analyze, redline, and negotiate with confidence.**
+
+ContractsPulse turns dense PDF agreements into structured, risk-scored insights and ready-to-send vendor redlines. Built for legal, procurement, and engineering teams who need to understand a contract in minutes, not hours.
+
+<p>
+  <img alt="FastAPI" src="https://img.shields.io/badge/FastAPI-009688?logo=fastapi&logoColor=white" />
+  <img alt="SvelteKit" src="https://img.shields.io/badge/SvelteKit-FF3E00?logo=svelte&logoColor=white" />
+  <img alt="PostgreSQL" src="https://img.shields.io/badge/PostgreSQL%20%2B%20pgvector-4169E1?logo=postgresql&logoColor=white" />
+  <img alt="Redis" src="https://img.shields.io/badge/Redis-DC382D?logo=redis&logoColor=white" />
+  <img alt="OpenAI" src="https://img.shields.io/badge/OpenAI-412991?logo=openai&logoColor=white" />
+  <img alt="Docker" src="https://img.shields.io/badge/Docker-2496ED?logo=docker&logoColor=white" />
+  <img alt="License: MIT" src="https://img.shields.io/badge/License-MIT-22c55e" />
+</p>
+
+</div>
 
 ---
 
-## 🚀 Key Features & Project Goals
-*   **Intelligent Contract Ingestion**: Automated parsing, text extraction, and token-aware chunking of PDF agreements.
-*   **AI-Powered Risk Analysis**: Deep learning evaluation targeting legal liabilities, indemnifications, and standard risk profiles.
-*   **Plain-English Warnings**: Flagging of broad Intellectual Property (IP) assignment clauses with clear side-project risks for developers.
-*   **Interactive Redlining**: Automated, professional redlines suggesting mitigation text, accompanied by plain-English rationales.
-*   **User Identity & Scoping**: Secure database-backed JWT authentication to isolate contract history, reports, and activity logs.
+> [!TIP]
+> **Just want to try it?** Run `./restart.sh`, open **[http://localhost:5173](http://localhost:5173)**, and log in with **`admin@admin.com`** / **`admin`**. See [Quick Start](#-quick-start-with-docker-recommended).
+
+---
+
+## 🚀 Key Features
+
+*   **Intelligent Contract Ingestion** — Automated parsing, text extraction, and token-aware chunking of PDF agreements. Drag-and-drop multiple files at once, or paste raw contract text.
+*   **AI-Powered Risk Analysis** — Clause-by-clause evaluation of legal liabilities, indemnifications, IP assignment, termination, and standard risk profiles, each scored **Critical → Low**.
+*   **Plain-English Warnings** — Flags broad IP assignment and restrictive clauses with clear, developer-friendly side-project risk notes.
+*   **Interactive Redlining** — Professional redline suggestions with mitigation language and plain-English rationale, viewable in a side-by-side diff.
+*   **AI Vendor Email Drafting** — Generate a ready-to-send negotiation email summarizing your requested redlines for any contract version, with adjustable tone.
+*   **Version Tracking & Verification** — Upload contract revisions, track versions, and verify how redlines were resolved between drafts.
+*   **Portfolio Dashboard** — Portfolio health, risk heatmap, top risk categories, and critical triggers across every contract you own.
+*   **Renewals Calendar** — Surface key dates and obligations so renewals and deadlines never slip.
+*   **Secure Multi-User Scoping** — Database-backed JWT authentication isolates each user's contracts, reports, and activity logs.
+*   **Rich CLI Client** — Analyze contracts, print reports, and submit redline feedback straight from your terminal.
+
+### 🧭 Application Pages
+
+| Page | Route | What it does |
+|---|---|---|
+| **Dashboard** | `/` | Portfolio health index, risk heatmap, and critical triggers at a glance. |
+| **Contract Repository** | `/contracts` | Upload (drag & drop / paste), search, filter, and manage all agreements with live processing progress. |
+| **Contract Cockpit** | `/contracts/{id}` | Deep dive: clauses, risks, redlines, version verification, and AI vendor email. |
+| **Risk Inbox** | `/risk` | Consolidated, portfolio-wide feed of high-severity clauses with one-click redline copy. |
+| **Vendors** | `/vendors` | Vendor-centric view of contracts and exposure. |
+| **Calendar** | `/calendar` | Upcoming renewals, deadlines, and key contractual dates. |
+
+---
+
+## 🧱 Tech Stack
+
+| Layer | Technology |
+|---|---|
+| **Frontend** | SvelteKit 5 (runes), TypeScript, Vite |
+| **Backend** | FastAPI (Python), Uvicorn, Pydantic / pydantic-ai |
+| **AI** | OpenAI models for clause extraction, risk scoring, and redline/email generation |
+| **Database** | PostgreSQL 16 with `pgvector` |
+| **Cache / Queue** | Redis 7 |
+| **Auth** | JWT (database-backed users) |
+| **Packaging** | Docker & Docker Compose |
+
+## 🗂 Project Structure
+
+```
+ContractsPulse/
+├── backend/            # FastAPI app (API, AI agents, models, ingestion)
+│   ├── app/
+│   └── scripts/        # Maintenance scripts (e.g. change_credentials.py)
+├── frontend/           # SvelteKit UI
+│   ├── src/routes/     # Dashboard, contracts, risk, vendors, calendar
+│   └── static/         # Branding assets (favicon / logo)
+├── cli/                # Interactive CLI client
+├── postgres/           # Persisted PostgreSQL data (volume)
+├── redis/              # Persisted Redis data (volume)
+├── docker-compose.yml  # frontend / api / db / redis services
+├── restart.sh          # Helper: rebuild & restart the full stack
+├── change-password.sh  # Helper: rotate the admin/user credentials
+└── .env.example        # Environment template
+```
+
+## 🎨 Brand
+
+The ContractsPulse mark pairs a **document** with a **pulse line** — the contract you're watching and the live risk signal we surface from it. The identity uses an indigo→violet gradient (`#5e6ad2 → #7c3aed`) that carries through the app's accent color and supports both light and dark themes.
 
 ---
 
@@ -46,7 +123,10 @@ The application is configured using a unified `.env` file located in the project
 |---|---|---|---|
 | `OPENAI_API_KEY` | *(None)* | OpenAI platform API Key for clause extraction and analysis. | **Yes** |
 | `JWT_SECRET` | `super-secret-contractspulse-key-change-it` | Key used to encode/decode JWT authorization tokens. | **Yes** |
+| `OPENAI_MODEL_EXTRACTOR` | `openai:gpt-4.1-mini` | pydantic-ai model id used for clause extraction. | No |
+| `OPENAI_MODEL_RISK` | `openai:gpt-4.1` | pydantic-ai model id used for risk scoring & redlines. | No |
 | `DISABLE_SIGNUP` | `false` | Disable public user registration. Set to `true` for private instances. | No |
+| `CORS_ORIGINS` | `http://localhost:5173,http://localhost:8000` | Comma-separated list of allowed browser origins. | No |
 | `POSTGRES_USER` | `postgres` | Username for the PostgreSQL database container. | No |
 | `POSTGRES_PASSWORD` | `postgres` | Password for the PostgreSQL database container. | No |
 | `POSTGRES_DB` | `contractspulse` | Database name for persistent tables. | No |
@@ -85,6 +165,17 @@ docker compose up -d --build
 Once the containers are online, the following services are active:
 *   **Web Frontend UI**: [http://localhost:5173](http://localhost:5173)
 *   **FastAPI Backend API Docs**: [http://localhost:9432/docs](http://localhost:9432/docs)
+
+### Step 4: Log In With the Default Account
+On first startup, the backend automatically seeds an administrator account if no users exist:
+
+| Field | Value |
+|---|---|
+| **Email** | `admin@admin.com` |
+| **Password** | `admin` |
+
+> [!IMPORTANT]
+> Change this password immediately after your first login (or register your own account and then set `DISABLE_SIGNUP=true`) before exposing the instance to a network.
 
 ---
 
@@ -244,6 +335,48 @@ To provide a seamless out-of-the-box experience, the FastAPI backend automatical
 
 > [!IMPORTANT]
 > Change the default password immediately after your initial login, or register your custom account first and then set `DISABLE_SIGNUP=true` to secure your instance.
+
+### Changing the Default Username / Password
+
+A helper script is included to rotate the seeded admin credentials (or any user's email/password) safely from your terminal. It runs inside the `api` container, so the stack must be up.
+
+**Interactive (recommended)** — prompts securely for a new password:
+```bash
+./change-password.sh
+```
+
+Update a **different** user, or change the **login email** too:
+```bash
+# Update a specific account
+./change-password.sh you@example.com
+
+# Also change the login email of the admin account
+NEW_EMAIL=you@example.com ./change-password.sh
+```
+
+**Non-interactive** (CI / automation) — pass the password via an environment variable:
+```bash
+CURRENT_EMAIL=admin@admin.com NEW_PASSWORD='ChangeMe!123' ./change-password.sh
+```
+
+> The script lives at `backend/scripts/change_credentials.py`. You can also call it directly:
+> `docker compose exec api python scripts/change_credentials.py --help`
+
+---
+
+## 💾 Data Persistence
+
+All application state is stored in the database, and the database is persisted to a host-mounted volume — so your users, contracts, extracted text, risk analyses, and redlines survive container restarts, rebuilds, and image upgrades.
+
+| Data | Where it lives | Persisted via (in `docker-compose.yml`) |
+|---|---|---|
+| Users, contracts, clauses, risks, redlines, uploaded contract text | PostgreSQL | `./postgres:/var/lib/postgresql/data` |
+| Cache / queue state | Redis | `./redis:/data` |
+
+> [!NOTE]
+> Uploaded PDFs are parsed on ingest and their text is stored in PostgreSQL, so there is no separate uploads directory to back up — **backing up `./postgres` backs up everything.**
+>
+> For named-volume deployments (e.g. Portainer), the included stack template maps `db_data` and `redis_data` named volumes for the same guarantee. To back up, stop the stack and archive the `./postgres` directory (or `docker run --rm -v ...` against the named volume).
 
 ---
 

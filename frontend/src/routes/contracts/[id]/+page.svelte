@@ -821,7 +821,7 @@
 	<div class="cockpit-header">
 		<div class="breadcrumbs">
 			<a href="/contracts" class="crumb crumb-link">Contract Repository</a>
-			<span class="separator">/</span>
+			<span class="separator">›</span>
 			<div class="version-select-container">
 				<button class="crumb active version-dropdown-trigger" onclick={() => versionDropdownOpen = !versionDropdownOpen} aria-expanded={versionDropdownOpen}>
 					<span>{formatDocumentName(contract.filename)}</span>

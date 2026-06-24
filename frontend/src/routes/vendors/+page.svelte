@@ -46,7 +46,12 @@
 			<span class="crumb active">Vendors</span>
 		</div>
 		<div class="header-content">
-			<h1>Vendor Directory</h1>
+			<div class="header-title-row">
+				<span class="header-icon">
+					<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 7l9-4 9 4-9 4-9-4z"/><path d="M3 17l9 4 9-4"/><path d="M3 12l9 4 9-4"/></svg>
+				</span>
+				<h1>Vendor Directory</h1>
+			</div>
 			<p class="text-tertiary">Group contracts by counterparty and prioritize review by risk exposure.</p>
 		</div>
 	</div>

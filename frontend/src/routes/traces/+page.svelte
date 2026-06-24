@@ -46,14 +46,17 @@
 	<div class="page-header-inner">
 		<div class="breadcrumbs">
 			<span class="crumb">ContractsPulse</span>
-			<span class="separator">/</span>
-			<span class="crumb">System</span>
-			<span class="separator">/</span>
+			<span class="separator">›</span>
 			<span class="crumb active">Agent Traces</span>
 		</div>
 
 		<div class="header-content flex-between">
-			<h1>Agent Traces</h1>
+			<div class="header-title-row">
+				<span class="header-icon">
+					<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M22 12h-4l-3 9L9 3l-3 9H2"/></svg>
+				</span>
+				<h1>Agent Traces</h1>
+			</div>
 		</div>
 	</div>
 </header>

@@ -30,8 +30,8 @@
 	let isClauseDropdownOpen = $state(false);
 	let isContractDropdownOpen = $state(false);
 
-	// UI Expanded drawers
-	let expandedRedlines = $state<Record<string, boolean>>({});
+	// UI Expanded rows
+	let expandedRows = $state<Record<string, boolean>>({});
 
 	// Base metrics that only depend on the 'risks' array
 	let baseMetrics = $derived.by(() => {
@@ -115,10 +115,10 @@
 		}
 	}
 
-	function toggleRedline(id: string) {
-		expandedRedlines = {
-			...expandedRedlines,
-			[id]: !expandedRedlines[id]
+	function toggleRow(id: string) {
+		expandedRows = {
+			...expandedRows,
+			[id]: !expandedRows[id]
 		};
 	}
 
@@ -181,11 +181,16 @@
 	<div class="page-header-inner">
 		<div class="breadcrumbs">
 			<span class="crumb">ContractsPulse</span>
-			<span class="separator">/</span>
+			<span class="separator">›</span>
 			<span class="crumb active">Risk Inbox</span>
 		</div>
 		<div class="header-content">
-			<h1>Risk Inbox</h1>
+			<div class="header-title-row">
+				<span class="header-icon">
+					<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"/><line x1="12" y1="9" x2="12" y2="13"/><line x1="12" y1="17" x2="12.01" y2="17"/></svg>
+				</span>
+				<h1>Risk Inbox</h1>
+			</div>
 			<p class="subtitle text-secondary">Portfolio-wide consolidated feed of active high-severity contract vulnerabilities.</p>
 		</div>
 	</div>
@@ -333,99 +338,63 @@
 			<p class="text-secondary">No severe contract vulnerabilities match your active filter settings.</p>
 		</div>
 	{:else}
-		<div class="risks-feed">
-			{#each filteredRisks as r, i (r.id)}
-				{@const isCritical = r.risk_level === 'CRITICAL'}
-				{@const isExpanded = expandedRedlines[r.id]}
-				<div class="risk-card panel risk-{r.risk_level.toLowerCase()} stagger-entry" style="--index: {i}" class:card-expanded={isExpanded}>
-					<!-- Header Section -->
-					<div class="risk-card-header flex-between">
-						<div class="risk-origin flex-row gap-8">
-							<span class="origin-label">Document:</span>
-							<button class="doc-chip-btn" onclick={() => goto(`/contracts/${r.contract_id}`)} title="View Contract">
-								<svg class="paperclip-icon" style="flex-shrink: 0;" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21.44 11.05l-9.19 9.19a6 6 0 0 1-8.49-8.49l9.19-9.19a4 4 0 0 1 5.66 5.66l-9.2 9.19a2 2 0 0 1-2.83-2.83l8.49-8.48"/></svg>
-								<span class="filename-text" title={r.contract_filename}>{r.contract_filename}</span>
-							</button>
-						</div>
-
-						<div class="risk-severity flex-row gap-8">
-							<span class="clause-type-badge font-mono">{r.clause_type}</span>
-							<span class="badge badge-{isCritical ? 'danger' : 'warning'} font-bold">
-								{r.risk_level}
-							</span>
-						</div>
-					</div>
-
-					<!-- Body Section: Reasoning & Clause Text excerpt -->
-					<div class="risk-card-body">
-						<div class="risk-reasoning">
-							<strong>Why it matters:</strong> {r.risk_reasoning || 'Clause contains terms that require immediate legal audit.'}
-						</div>
-
-						<div class="clause-text-block font-mono">
-							{r.text_content}
-						</div>
-					</div>
-
-					<!-- Redline Suggested Drawer -->
-					{#if r.redline_suggestion}
-						<div class="redline-drawer" class:open={isExpanded}>
-							<div
-								class="redline-toggle flex-between"
-								role="button"
-								tabindex="0"
-								onclick={() => toggleRedline(r.id)}
-								onkeydown={(e) => {
-									if (e.key === 'Enter' || e.key === ' ') {
-										e.preventDefault();
-										toggleRedline(r.id);
-									}
-								}}
-							>
-								<span class="flex-row gap-6 font-semibold">
-									<svg class="chevron-icon" class:rotated={isExpanded} width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="9 18 15 12 9 6"/></svg>
-									Suggested Alternative (Redline)
-								</span>
-								<button class="btn btn-secondary btn-compact text-xs" style="opacity: {isExpanded ? 1 : 0}; pointer-events: {isExpanded ? 'auto' : 'none'}; transition: opacity 150ms var(--ease-out);" onclick={(e) => { e.stopPropagation(); copyRedline(r); }}>
-									Copy Redline
-								</button>
+		<div class="inbox-count text-tertiary">{filteredRisks.length} {filteredRisks.length === 1 ? 'finding' : 'findings'}</div>
+		<div class="risk-feed">
+			{#each filteredRisks as r (r.id)}
+				{@const isExpanded = expandedRows[r.id]}
+				{@const sevClass = r.risk_level === 'CRITICAL' ? 'badge-danger' : r.risk_level === 'HIGH' ? 'badge-warning' : 'badge-secondary'}
+				<div class="risk-item" class:expanded={isExpanded}>
+					<button type="button" class="risk-item-summary" aria-expanded={isExpanded} onclick={() => toggleRow(r.id)}>
+						<div class="risk-item-top">
+							<div class="risk-item-title">
+								<span class="badge badge-sm {sevClass}">{r.risk_level}</span>
+								<span class="risk-item-clause">{r.clause_type || 'General clause'}</span>
+								{#if r.redline_suggestion}
+									<span class="redline-flag" title="AI redline available">
+										<svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M12 20h9"/><path d="M16.5 3.5a2.12 2.12 0 0 1 3 3L7 19l-4 1 1-4Z"/></svg>
+										Redline
+									</span>
+								{/if}
 							</div>
+							<div class="risk-item-meta">
+								<span class="risk-item-time">{timeAgo(r.created_at)}</span>
+								<svg class="row-chevron" class:rotated={isExpanded} width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="6 9 12 15 18 9"/></svg>
+							</div>
+						</div>
 
-							<div class="redline-drawer-content-wrapper" style="display: grid; grid-template-rows: {isExpanded ? '1fr' : '0fr'}; transition: grid-template-rows 250ms var(--ease-out);">
-								<div style="overflow: hidden;">
-									<div class="diff-comparison-pane">
-										<div class="diff-column diff-column-original">
-											<div class="diff-header font-semibold text-xs text-secondary flex-between">
-												<span>Current Clause Language</span>
-												<span class="diff-badge diff-badge-removed">Original</span>
-											</div>
-											<div class="diff-content font-mono">{r.text_content}</div>
-										</div>
-										<div class="diff-column diff-column-suggested">
-											<div class="diff-header font-semibold text-xs text-secondary flex-between">
-												<span>AI Recommended Redline</span>
-												<span class="diff-badge diff-badge-added">Suggested</span>
-											</div>
-											<div class="diff-content font-mono">{r.redline_suggestion}</div>
-										</div>
+						<div class="risk-item-doc text-tertiary">
+							<svg class="file-icon" width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/></svg>
+							<span class="risk-item-filename" title={r.contract_filename}>{r.contract_filename}</span>
+						</div>
+
+						<p class="risk-item-reason" class:clamp={!isExpanded}>{r.risk_reasoning || 'Clause contains terms that require legal review.'}</p>
+					</button>
+
+					<!-- Expandable detail -->
+					<div class="risk-detail-wrap" style="display:grid; grid-template-rows: {isExpanded ? '1fr' : '0fr'}; transition: grid-template-rows 240ms var(--ease-out);">
+						<div style="overflow:hidden;">
+							<div class="risk-detail">
+								<div class="detail-section">
+									<div class="detail-label">Clause excerpt</div>
+									<blockquote class="clause-quote">{r.text_content}</blockquote>
+								</div>
+
+								{#if r.redline_suggestion}
+									<div class="detail-section">
+										<div class="detail-label">Suggested redline</div>
+										<div class="redline-suggest">{r.redline_suggestion}</div>
 									</div>
+								{/if}
+
+								<div class="detail-actions">
+									<button class="btn btn-secondary btn-compact" onclick={() => copyRedline(r)}>Copy details</button>
+									<button class="btn btn-secondary btn-compact" onclick={() => goto(`/contracts/${r.contract_id}`)}>View document</button>
+									<button class="btn btn-primary btn-compact" onclick={() => goto(`/contracts/${r.contract_id}?tab=clauses&search=${encodeURIComponent(r.clause_type)}&risk=${r.risk_level}`)}>
+										Resolve in Cockpit
+										<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><line x1="5" y1="12" x2="19" y2="12"/><polyline points="12 5 19 12 12 19"/></svg>
+									</button>
 								</div>
 							</div>
-						</div>
-					{/if}
-
-					<!-- Footer Action Panel -->
-					<div class="risk-card-footer flex-between">
-						<span class="uploaded-time text-tertiary">Found {timeAgo(r.created_at)}</span>
-						
-						<div class="footer-actions flex-row gap-12">
-							<button class="btn btn-secondary btn-compact" onclick={() => copyRedline(r)}>
-								Copy Details
-							</button>
-							<button class="btn btn-primary btn-compact" onclick={() => goto(`/contracts/${r.contract_id}?tab=clauses&search=${encodeURIComponent(r.clause_type)}&risk=${r.risk_level}`)}>
-								Resolve in Cockpit
-								<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><line x1="5" y1="12" x2="19" y2="12"/><polyline points="12 5 19 12 12 19"/></svg>
-							</button>
 						</div>
 					</div>
 				</div>
@@ -435,44 +404,6 @@
 </div>
 
 <style>
-	.page-header {
-		padding: 32px 40px 24px;
-		border-bottom: 1px solid var(--border-subtle);
-		background: var(--bg-sidebar);
-	}
-
-	.breadcrumbs {
-		display: flex;
-		align-items: center;
-		gap: 8px;
-		font-size: 13px;
-		margin-bottom: 12px;
-	}
-
-	.crumb {
-		color: var(--text-tertiary);
-	}
-
-	.crumb.active {
-		color: var(--text-primary);
-		font-weight: 500;
-	}
-
-	.separator {
-		color: var(--border-strong);
-	}
-
-	.header-content h1 {
-		font-size: 20px;
-		font-weight: 600;
-		margin: 0;
-	}
-
-	.subtitle {
-		font-size: 13px;
-		margin-top: 4px;
-	}
-
 	.page-content {
 		padding: 32px 40px;
 		max-width: 1200px;
@@ -513,8 +444,8 @@
 		height: 6px;
 		border-radius: 50%;
 	}
-	.m-dot-critical { background: var(--color-critical); box-shadow: 0 0 8px var(--color-critical); }
-	.m-dot-high { background: var(--color-high); box-shadow: 0 0 8px var(--color-high); }
+	.m-dot-critical { background: var(--color-critical); }
+	.m-dot-high { background: var(--color-high); }
 	.m-dot-neutral { background: var(--text-tertiary); }
 
 	/* Filter Control Panel */
@@ -588,14 +519,14 @@
 	}
 
 	.filter-pill-critical.active {
-		border-color: rgba(255, 59, 48, 0.4);
-		background: rgba(255, 59, 48, 0.08);
+		border-color: rgba(var(--color-critical-rgb), 0.3);
+		background: rgba(var(--color-critical-rgb), 0.08);
 		color: var(--color-critical);
 	}
 
 	.filter-pill-high.active {
-		border-color: rgba(248, 81, 73, 0.4);
-		background: rgba(248, 81, 73, 0.08);
+		border-color: rgba(var(--color-high-rgb), 0.3);
+		background: rgba(var(--color-high-rgb), 0.08);
 		color: var(--color-high);
 	}
 
@@ -668,325 +599,172 @@
 		font-size: 13px;
 	}
 
-	/* Risks Feed */
-	.risks-feed {
+	/* ------------------------------------------------------------
+	   Risk findings — dashboard-style cards with inline expand
+	   ------------------------------------------------------------- */
+	.inbox-count {
+		font-size: var(--fs-xs, 12px);
+		font-weight: 500;
+		margin-bottom: 12px;
+	}
+
+	.risk-feed {
 		display: flex;
 		flex-direction: column;
-		gap: 16px;
+		gap: 12px;
 	}
 
-	.risk-card {
-		padding: 24px 24px 24px 28px; /* Extra left padding for organic capsule lightbar */
-		background: var(--bg-glass-card);
-		backdrop-filter: blur(12px);
-		border: 1px solid var(--border-glass);
+	.risk-item {
 		border-radius: 8px;
-		box-shadow: 
-			0 1px 2px rgba(0, 0, 0, 0.01),
-			0 10px 30px rgba(0, 0, 0, 0.03),
-			inset 0 1px 0 rgba(255, 255, 255, 0.6);
-		transition: border-color 220ms var(--ease-spring-gentle), 
-		            transform 200ms var(--ease-spring-gentle), 
-		            box-shadow 220ms var(--ease-spring-gentle);
-		position: relative;
-		overflow: hidden;
-	}
-
-	:global([data-theme="dark"]) .risk-card {
-		box-shadow: 
-			0 1px 2px rgba(0, 0, 0, 0.15),
-			0 16px 40px rgba(0, 0, 0, 0.35),
-			inset 0 1px 0 rgba(255, 255, 255, 0.06);
 		background: var(--bg-glass-card);
-		border-color: var(--border-glass);
-	}
-
-	.risk-card:hover {
-		transform: translateY(-3px);
-	}
-
-	.risk-card:active {
-		transform: translateY(-1px) scale(0.98);
-	}
-
-	/* Organic capsule vertical status bars */
-	.risk-card::before {
-		content: '';
-		position: absolute;
-		left: 10px;
-		top: 24px;
-		bottom: 24px;
-		width: 4px;
-		border-radius: 4px;
-		transition: background 180ms ease, box-shadow 180ms ease;
-	}
-
-	/* Severity Specific Ambient Back-glow & Outlines */
-	.risk-critical {
-		border-color: var(--glow-critical-border);
-	}
-	.risk-critical::before {
-		background: linear-gradient(180deg, var(--color-critical) 0%, rgba(217, 56, 58, 0.5) 100%);
-		box-shadow: 0 0 10px rgba(217, 56, 58, 0.4);
-	}
-	.risk-critical:hover {
-		border-color: rgba(217, 56, 58, 0.35);
-		box-shadow: var(--shadow-lg), 0 0 20px rgba(217, 56, 58, 0.06), inset 0 1px 0 rgba(255, 255, 255, 0.6);
-	}
-	:global([data-theme="dark"]) .risk-critical:hover {
-		box-shadow: var(--shadow-lg), 0 0 20px rgba(217, 56, 58, 0.08), inset 0 1px 0 rgba(255, 255, 255, 0.06);
-	}
-
-	.risk-high {
-		border-color: var(--glow-high-border);
-	}
-	.risk-high::before {
-		background: linear-gradient(180deg, var(--color-high) 0%, rgba(207, 34, 46, 0.5) 100%);
-		box-shadow: 0 0 10px rgba(207, 34, 46, 0.3);
-	}
-	.risk-high:hover {
-		border-color: rgba(207, 34, 46, 0.3);
-		box-shadow: var(--shadow-lg), 0 0 20px rgba(207, 34, 46, 0.05), inset 0 1px 0 rgba(255, 255, 255, 0.6);
-	}
-	:global([data-theme="dark"]) .risk-high:hover {
-		box-shadow: var(--shadow-lg), 0 0 20px rgba(207, 34, 46, 0.06), inset 0 1px 0 rgba(255, 255, 255, 0.06);
-	}
-
-	.risk-card-header {
-		padding-bottom: 16px;
-		border-bottom: 1px solid var(--border-subtle);
-		margin-bottom: 16px;
-	}
-
-	.origin-label {
-		font-size: 12px;
-		font-weight: 500;
-		color: var(--text-tertiary);
-	}
-
-	/* High-fidelity paper-clip doc chip */
-	.doc-chip-btn {
-		background: var(--bg-hover);
 		border: 1px solid var(--border-subtle);
-		color: var(--text-primary);
-		padding: 4px 12px;
-		border-radius: 6px;
-		font-size: 12px;
-		font-weight: 500;
+		overflow: hidden;
+		transition: border-color 150ms ease, box-shadow 150ms ease;
+	}
+	.risk-item:hover,
+	.risk-item.expanded {
+		border-color: var(--border-glass-hover);
+		box-shadow: var(--shadow-sm);
+	}
+
+	.risk-item-summary {
+		width: 100%;
+		display: flex;
+		flex-direction: column;
+		gap: 8px;
+		padding: 16px;
+		background: transparent;
+		border: none;
+		text-align: left;
 		cursor: pointer;
+	}
+
+	.risk-item-top {
+		display: flex;
+		justify-content: space-between;
+		align-items: center;
+		gap: 12px;
+	}
+
+	.risk-item-title {
+		display: flex;
+		align-items: center;
+		gap: 8px;
+		min-width: 0;
+	}
+	.risk-item-clause {
+		font-size: var(--fs-sm, 13px);
+		font-weight: 600;
+		color: var(--text-primary);
+		white-space: nowrap;
+		overflow: hidden;
+		text-overflow: ellipsis;
+	}
+	.redline-flag {
 		display: inline-flex;
 		align-items: center;
+		gap: 4px;
+		flex-shrink: 0;
+		font-size: 9.5px;
+		font-weight: 700;
+		text-transform: uppercase;
+		letter-spacing: 0.4px;
+		color: var(--accent-primary);
+		background: rgba(var(--accent-primary-rgb), 0.10);
+		padding: 2px 7px;
+		border-radius: 999px;
+	}
+
+	.risk-item-meta {
+		display: flex;
+		align-items: center;
+		gap: 8px;
+		flex-shrink: 0;
+		color: var(--text-tertiary);
+	}
+	.risk-item-time { font-size: var(--fs-2xs, 11px); white-space: nowrap; }
+	.row-chevron { transition: transform 200ms var(--ease-out); color: var(--text-tertiary); }
+	.row-chevron.rotated { transform: rotate(180deg); color: var(--text-secondary); }
+
+	.risk-item-doc {
+		display: flex;
+		align-items: center;
 		gap: 6px;
-		max-width: 250px;
-		transition: transform 120ms var(--ease-out), background 150ms ease, border-color 150ms ease, box-shadow 150ms ease;
-		box-shadow: 0 1px 2px rgba(0, 0, 0, 0.01);
+		font-size: var(--fs-2xs, 11px);
+		min-width: 0;
 	}
-
-	.doc-chip-btn:hover {
-		background: var(--bg-active);
-		border-color: var(--border-strong);
-		box-shadow: 0 2px 6px rgba(0, 0, 0, 0.02);
-	}
-
-	.doc-chip-btn:active {
-		transform: scale(0.97);
-	}
-
-	.clause-type-badge {
-		font-size: 11px;
-		font-weight: 600;
-		background: var(--bg-hover);
-		color: var(--text-secondary);
-		border: 1px solid var(--border-subtle);
-		padding: 2px 8px;
-		border-radius: 4px;
-		letter-spacing: 0.5px;
-	}
-
-	.risk-card-body {
-		margin-bottom: 20px;
-	}
-
-	.risk-reasoning {
-		font-size: 13.5px;
-		font-weight: 500;
-		color: var(--text-primary);
-		line-height: 1.5;
-		margin-bottom: 14px;
-	}
-
-	.risk-reasoning strong {
-		font-weight: 600;
-		color: var(--text-secondary);
-	}
-
-	/* ------------------------------------------------------------
-	   Sleek Comparative Suggested Redline Drawer
-	   ------------------------------------------------------------- */
-	.redline-drawer {
-		background: rgba(94, 106, 210, 0.015);
-		border: 1px solid var(--border-subtle);
-		border-radius: 8px;
-		margin-bottom: 20px;
+	.file-icon { color: var(--text-tertiary); flex-shrink: 0; }
+	.risk-item-filename {
+		white-space: nowrap;
 		overflow: hidden;
-		transition: border-color 220ms ease, background 220ms ease, box-shadow 220ms ease;
+		text-overflow: ellipsis;
 	}
 
-	.redline-drawer.open {
-		border-color: rgba(94, 106, 210, 0.25);
-		background: rgba(94, 106, 210, 0.04);
-		box-shadow: inset 0 1px 2px rgba(94, 106, 210, 0.02), 0 2px 10px rgba(94, 106, 210, 0.01);
-	}
-
-	.redline-toggle {
-		padding: 12px 16px;
-		font-size: 12.5px;
-		font-weight: 600;
-		cursor: pointer;
-		user-select: none;
+	.risk-item-reason {
+		margin: 0;
+		font-size: var(--fs-xs, 12px);
 		color: var(--text-secondary);
-		transition: color 150ms ease;
+		line-height: 1.5;
+	}
+	.risk-item-reason.clamp {
+		display: -webkit-box;
+		-webkit-line-clamp: 2;
+		line-clamp: 2;
+		-webkit-box-orient: vertical;
+		overflow: hidden;
 	}
 
-	.redline-toggle:hover {
-		color: var(--text-primary);
+	/* Expanded detail */
+	.risk-detail {
+		padding: 0 16px 16px;
+		display: flex;
+		flex-direction: column;
+		gap: 14px;
 	}
 
-	.chevron-icon {
-		transition: transform 200ms var(--ease-out);
+	.detail-section { display: flex; flex-direction: column; gap: 6px; }
+	.detail-label {
+		font-size: 10px;
+		font-weight: 700;
+		text-transform: uppercase;
+		letter-spacing: 0.6px;
 		color: var(--text-tertiary);
 	}
 
-	.chevron-icon.rotated {
-		transform: rotate(90deg);
-		color: var(--text-primary);
-	}
-
-	.diff-comparison-pane {
-		display: grid;
-		grid-template-columns: 1fr 1fr;
-		gap: 16px;
-		padding: 0 16px 16px;
-		background: transparent;
-	}
-
-	@media (max-width: 768px) {
-		.diff-comparison-pane {
-			grid-template-columns: 1fr;
-			gap: 12px;
-		}
-	}
-
-	.diff-column {
-		border-radius: 8px;
-		overflow: hidden;
-		border: 1px solid var(--border-subtle);
-		display: flex;
-		flex-direction: column;
+	.clause-quote {
+		margin: 0;
+		padding: 12px 14px;
+		border-left: 2px solid var(--border-strong);
 		background: var(--bg-sidebar);
-	}
-
-	.diff-column-original {
-		background: rgba(217, 56, 58, 0.015);
-		border-color: rgba(217, 56, 58, 0.12);
-	}
-
-	:global([data-theme="dark"]) .diff-column-original {
-		background: rgba(255, 59, 48, 0.015);
-		border-color: rgba(255, 59, 48, 0.15);
-	}
-
-	.diff-column-suggested {
-		background: rgba(46, 160, 67, 0.015);
-		border-color: rgba(46, 160, 67, 0.12);
-	}
-
-	:global([data-theme="dark"]) .diff-column-suggested {
-		background: rgba(63, 185, 80, 0.015);
-		border-color: rgba(63, 185, 80, 0.15);
-	}
-
-	.diff-header {
-		padding: 10px 12px;
-		border-bottom: 1px solid var(--border-subtle);
-		font-size: 11px;
-		font-weight: 600;
-		text-transform: uppercase;
-		letter-spacing: 0.5px;
-		display: flex;
-		align-items: center;
-		justify-content: space-between;
-		background: rgba(0, 0, 0, 0.01);
-	}
-
-	.diff-column-original .diff-header {
-		border-bottom-color: rgba(217, 56, 58, 0.08);
-		color: var(--color-critical);
-	}
-
-	.diff-column-suggested .diff-header {
-		border-bottom-color: rgba(46, 160, 67, 0.08);
-		color: var(--color-low);
-	}
-
-	.diff-content {
-		padding: 12px;
-		font-family: 'JetBrains Mono', 'Fira Code', monospace;
+		border-radius: 0 6px 6px 0;
 		font-size: 12.5px;
-		line-height: 1.65;
+		line-height: 1.6;
+		color: var(--text-secondary);
 		white-space: pre-wrap;
 		word-break: break-word;
-		flex-grow: 1;
-		max-height: 250px;
+		max-height: 170px;
 		overflow-y: auto;
 	}
 
-	.diff-column-original .diff-content {
-		color: var(--color-critical);
-		text-shadow: 0 0 1px rgba(217, 56, 58, 0.15);
+	.redline-suggest {
+		padding: 12px 14px;
+		border-left: 2px solid rgba(var(--color-low-rgb), 0.5);
+		background: var(--bg-sidebar);
+		border-radius: 0 6px 6px 0;
+		font-size: 12.5px;
+		line-height: 1.6;
+		color: var(--text-primary);
+		white-space: pre-wrap;
+		word-break: break-word;
+		max-height: 220px;
+		overflow-y: auto;
 	}
 
-	:global([data-theme="dark"]) .diff-column-original .diff-content {
-		text-shadow: 0 0 8px rgba(255, 59, 48, 0.2);
-	}
-
-	.diff-column-suggested .diff-content {
-		color: var(--color-low);
-		text-shadow: 0 0 1px rgba(63, 185, 80, 0.15);
-	}
-
-	:global([data-theme="dark"]) .diff-column-suggested .diff-content {
-		text-shadow: 0 0 8px rgba(63, 185, 80, 0.2);
-	}
-
-	.diff-badge {
-		font-size: 9px;
-		font-weight: 700;
-		text-transform: uppercase;
-		padding: 2px 6px;
-		border-radius: 4px;
-		letter-spacing: 0.5px;
-	}
-
-	.diff-badge-removed {
-		background: rgba(217, 56, 58, 0.1);
-		color: var(--color-critical);
-	}
-
-	.diff-badge-added {
-		background: rgba(46, 160, 67, 0.1);
-		color: var(--color-low);
-	}
-
-	/* Footer Action Panel */
-	.risk-card-footer {
-		padding-top: 16px;
-		border-top: 1px solid var(--border-subtle);
-	}
-
-	.uploaded-time {
-		font-size: 11px;
-		font-weight: 500;
+	.detail-actions {
+		display: flex;
+		flex-wrap: wrap;
+		gap: 8px;
+		justify-content: flex-end;
 	}
 
 	.btn-compact {
@@ -1003,12 +781,6 @@
 
 		.search-and-severity {
 			grid-template-columns: 1fr;
-			gap: 12px;
-		}
-
-		.risk-card-header {
-			flex-direction: column;
-			align-items: flex-start;
 			gap: 12px;
 		}
 	}

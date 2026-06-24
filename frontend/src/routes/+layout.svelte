@@ -129,7 +129,13 @@
 	<div class="auth-container">
 		<div class="auth-card panel">
 			<div class="auth-header">
-				<div class="workspace-avatar" style="margin: 0 auto 16px;">C</div>
+				<div class="workspace-avatar brand-mark brand-mark-lg" style="margin: 0 auto 16px;" aria-label="ContractsPulse logo">
+					<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+						<path d="M14 3H7a1 1 0 0 0-1 1v16a1 1 0 0 0 1 1h10a1 1 0 0 0 1-1V7z"/>
+						<path d="M14 3v4h4"/>
+						<path d="M8 13h2l1.5-3 2 6 1.5-3H16"/>
+					</svg>
+				</div>
 				<h2>{isLogin ? 'Log in to ContractsPulse' : 'Create an Account'}</h2>
 				<p>{isLogin ? 'Enter your credentials to access your workspace.' : 'Register a new account to get started.'}</p>
 			</div>
@@ -200,13 +206,19 @@
 	<div class="app-layout">
 		<aside class="sidebar">
 			<div class="workspace-switcher flex-row">
-				<div class="workspace-avatar">C</div>
+				<div class="workspace-avatar brand-mark" aria-label="ContractsPulse logo">
+					<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+						<path d="M14 3H7a1 1 0 0 0-1 1v16a1 1 0 0 0 1 1h10a1 1 0 0 0 1-1V7z"/>
+						<path d="M14 3v4h4"/>
+						<path d="M8 13h2l1.5-3 2 6 1.5-3H16"/>
+					</svg>
+				</div>
 				<div class="workspace-name">ContractsPulse</div>
 			</div>
 
 			<nav class="sidebar-nav">
 				<div class="nav-section">
-					<div class="nav-label">Your Workspace</div>
+					<div class="nav-label">Workspace</div>
 					<a href="/" class="nav-item {$page.url.pathname === '/' ? 'active' : ''}">
 						<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="3" width="18" height="18" rx="2"/><path d="M3 9h18M9 21V9"/></svg>
 						Dashboard
@@ -357,12 +369,12 @@
 <style>
 	:global(.toast-viewport) {
 		position: fixed;
-		bottom: 24px;
+		top: 24px;
 		right: 24px;
 		display: flex;
-		flex-direction: column-reverse;
+		flex-direction: column;
 		gap: 8px;
-		z-index: 100;
+		z-index: 200;
 		pointer-events: none;
 	}
 
@@ -377,7 +389,7 @@
 		box-shadow: var(--shadow-premium);
 		pointer-events: auto;
 		animation: slideIn 220ms var(--ease-out) forwards;
-		transform-origin: bottom center;
+		transform-origin: top center;
 	}
 
 	:global(.toast-error) {
@@ -399,7 +411,7 @@
 	}
 
 	@keyframes slideIn {
-		from { opacity: 0; transform: translateY(12px) scale(0.95); }
+		from { opacity: 0; transform: translateY(-12px) scale(0.95); }
 		to { opacity: 1; transform: translateY(0) scale(1); }
 	}
 
@@ -571,6 +583,28 @@
 		justify-content: center;
 		font-size: 12px;
 		font-weight: 600;
+	}
+
+	.brand-mark {
+		background: linear-gradient(135deg, #6e79e0 0%, #7c3aed 100%);
+		color: #fff;
+	}
+
+	.brand-mark svg {
+		width: 15px;
+		height: 15px;
+	}
+
+	.brand-mark-lg {
+		width: 48px;
+		height: 48px;
+		border-radius: 12px;
+		box-shadow: 0 6px 20px rgba(var(--ai-rgb), 0.28);
+	}
+
+	.brand-mark-lg svg {
+		width: 28px;
+		height: 28px;
 	}
 
 	.workspace-name {

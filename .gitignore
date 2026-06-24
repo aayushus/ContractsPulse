@@ -1,6 +1,7 @@
 brd/
 .DS_Store
 postgres/
+postgres.bak/
 redis/
 langfuse-data/
 .agents/

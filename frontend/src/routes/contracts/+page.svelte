@@ -1,7 +1,9 @@
 <script lang="ts">
 	import { onMount, onDestroy } from 'svelte';
+	import { createAdaptivePoller, type AdaptivePoller } from '$lib/poller';
 	import { goto } from '$app/navigation';
-	import { apiFetch } from '$lib/api';
+	import { apiFetch, getApiBase } from '$lib/api';
+	import { authState } from '$lib/auth.svelte';
 	import { toast } from '$lib/toastStore';
 	let { data } = $props();
 	// In dev hydration / fast refresh, `data` can briefly be undefined.
@@ -20,7 +22,7 @@
 	let isLoading = $state(false);
 	let isUploading = $state(false);
 	let fileInput: HTMLInputElement;
-	let pollInterval: any;
+	let poller: AdaptivePoller;
 	let apiBase = $state('http://localhost:9432');
 
 	// Filtering states
@@ -131,40 +133,163 @@
 		}
 	}
 
+	// ---- Uploads (drag & drop, multi-file, per-file progress) ----
+	const MAX_UPLOAD_BYTES = 20 * 1024 * 1024; // 20MB
+
+	type UploadItem = {
+		id: string;
+		file: File;
+		name: string;
+		size: number;
+		status: 'queued' | 'uploading' | 'done' | 'error' | 'invalid';
+		progress: number;
+		message?: string;
+	};
+
+	let uploadModalOpen = $state(false);
+	let uploadItems = $state<UploadItem[]>([]);
+	let isDragging = $state(false);
+	let queueRunning = false;
+
+	function formatBytes(bytes: number): string {
+		if (bytes < 1024) return `${bytes} B`;
+		if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(0)} KB`;
+		return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
+	}
+
+	function makeId(): string {
+		return typeof crypto !== 'undefined' && crypto.randomUUID ? crypto.randomUUID() : `${Date.now()}-${Math.random()}`;
+	}
+
+	function updateItem(id: string, patch: Partial<UploadItem>) {
+		uploadItems = uploadItems.map((it) => (it.id === id ? { ...it, ...patch } : it));
+	}
+
 	function triggerUpload() {
 		if (fileInput) fileInput.click();
 	}
 
-	async function handleFileChange(event: Event) {
-		const target = event.target as HTMLInputElement;
-		if (!target.files || target.files.length === 0) return;
-		
-		const file = target.files[0];
-		isUploading = true;
-		const formData = new FormData();
-		formData.append('file', file);
-		
-		let loadingToastId = toast.loading(`Uploading ${file.name}...`);
-		try {
-			const response = await apiFetch('/api/v1/contracts/upload', {
-				method: 'POST',
-				body: formData
-			});
-			
-			if (response.ok) {
-				toast.dismiss(loadingToastId);
-				toast.success('Document uploaded. AI processing started.');
-				fetchContracts(true);
-			} else {
-				throw new Error('Upload failed');
+	function openUploadModal() {
+		uploadModalOpen = true;
+	}
+
+	function closeUploadModal() {
+		uploadModalOpen = false;
+		isDragging = false;
+		// Drop finished/invalid entries so the next open starts clean; keep in-flight ones.
+		uploadItems = uploadItems.filter((it) => it.status === 'uploading' || it.status === 'queued');
+	}
+
+	function addFiles(files: FileList | File[]) {
+		const arr = Array.from(files);
+		if (arr.length === 0) return;
+		uploadModalOpen = true;
+		for (const file of arr) {
+			const isPdf = file.type === 'application/pdf' || file.name.toLowerCase().endsWith('.pdf');
+			let status: UploadItem['status'] = 'queued';
+			let message: string | undefined;
+			if (!isPdf) {
+				status = 'invalid';
+				message = 'Only PDF files are supported.';
+			} else if (file.size === 0) {
+				status = 'invalid';
+				message = 'File is empty.';
+			} else if (file.size > MAX_UPLOAD_BYTES) {
+				status = 'invalid';
+				message = `Too large — max ${formatBytes(MAX_UPLOAD_BYTES)}.`;
 			}
-		} catch (error) {
-			console.error("Upload error:", error);
-			toast.dismiss(loadingToastId);
-			toast.error('Failed to upload document.');
-		} finally {
-			isUploading = false;
+			uploadItems = [...uploadItems, { id: makeId(), file, name: file.name, size: file.size, status, progress: 0, message }];
 		}
+		void processQueue();
+	}
+
+	function uploadOne(item: UploadItem): Promise<void> {
+		return new Promise((resolve) => {
+			const xhr = new XMLHttpRequest();
+			xhr.open('POST', `${getApiBase()}/api/v1/contracts/upload`);
+			if (authState.token) xhr.setRequestHeader('Authorization', `Bearer ${authState.token}`);
+			xhr.upload.onprogress = (e) => {
+				if (e.lengthComputable) updateItem(item.id, { progress: Math.round((e.loaded / e.total) * 100) });
+			};
+			xhr.onload = () => {
+				if (xhr.status >= 200 && xhr.status < 300) {
+					updateItem(item.id, { status: 'done', progress: 100 });
+					fetchContracts(true);
+				} else {
+					if (xhr.status === 401) authState.logout();
+					let msg = 'Upload failed.';
+					try {
+						const j = JSON.parse(xhr.responseText);
+						if (j?.detail && typeof j.detail === 'string') msg = j.detail;
+					} catch {}
+					updateItem(item.id, { status: 'error', message: msg });
+				}
+				resolve();
+			};
+			xhr.onerror = () => {
+				updateItem(item.id, { status: 'error', message: 'Network error.' });
+				resolve();
+			};
+			const fd = new FormData();
+			fd.append('file', item.file);
+			updateItem(item.id, { status: 'uploading', progress: 0 });
+			xhr.send(fd);
+		});
+	}
+
+	async function processQueue() {
+		if (queueRunning) return;
+		queueRunning = true;
+		try {
+			while (true) {
+				const next = uploadItems.find((it) => it.status === 'queued');
+				if (!next) break;
+				await uploadOne(next);
+			}
+		} finally {
+			queueRunning = false;
+		}
+	}
+
+	function retryItem(id: string) {
+		updateItem(id, { status: 'queued', progress: 0, message: undefined });
+		void processQueue();
+	}
+
+	function removeItem(id: string) {
+		uploadItems = uploadItems.filter((it) => it.id !== id);
+	}
+
+	function handleFileChange(event: Event) {
+		const target = event.target as HTMLInputElement;
+		if (target.files && target.files.length) addFiles(target.files);
+		target.value = '';
+	}
+
+	// Window-level drag so a PDF dropped anywhere opens the uploader.
+	function onWindowDragOver(e: DragEvent) {
+		const dt = e.dataTransfer;
+		if (dt && Array.from(dt.types).includes('Files')) {
+			e.preventDefault();
+			if (!uploadModalOpen) uploadModalOpen = true;
+		}
+	}
+	function onWindowDrop(e: DragEvent) {
+		const dt = e.dataTransfer;
+		if (dt && Array.from(dt.types).includes('Files')) e.preventDefault();
+	}
+	function onZoneDragOver(e: DragEvent) {
+		e.preventDefault();
+		isDragging = true;
+	}
+	function onZoneDragLeave() {
+		isDragging = false;
+	}
+	function onZoneDrop(e: DragEvent) {
+		e.preventDefault();
+		e.stopPropagation();
+		isDragging = false;
+		if (e.dataTransfer?.files?.length) addFiles(e.dataTransfer.files);
 	}
 
 	async function handlePasteAnalyze() {
@@ -259,6 +384,27 @@
 		return "Processing";
 	}
 
+	// Derive a progress bar + readable step from the contract's processing_step string.
+	// Determinate when the step reports "Clause X of Y"; otherwise indeterminate.
+	function parseProcessingProgress(step: string | undefined | null): {
+		ratio: number | null;
+		current: number | null;
+		total: number | null;
+		stepLabel: string;
+	} {
+		const s = (step || '').trim();
+		let current: number | null = null;
+		let total: number | null = null;
+		let ratio: number | null = null;
+		const m = s.match(/Clause\s+(\d+)\s+of\s+(\d+)/i);
+		if (m) {
+			current = parseInt(m[1], 10);
+			total = parseInt(m[2], 10);
+			if (total > 0) ratio = Math.max(0, Math.min(1, current / total));
+		}
+		return { ratio, current, total, stepLabel: s || 'Starting analysis…' };
+	}
+
 	function timeAgo(dateString: string) {
 		const now = new Date();
 		const date = new Date(dateString);
@@ -276,14 +422,22 @@
 		const u = new URL(window.location.href);
 		apiBase = `${u.protocol}//${u.hostname}:9432`;
 		// Load already populated via `+page.ts`, but keep a fast refresh + polling.
-		fetchContracts(true);
-		pollInterval = setInterval(() => fetchContracts(true), 3000);
+		poller = createAdaptivePoller({
+			fn: () => fetchContracts(true),
+			// Poll fast only while contracts are still processing; otherwise back off.
+			isActive: () => queueCount > 0,
+			activeMs: 3000,
+			idleMs: 30000
+		});
+		poller.start();
 	});
 
 	onDestroy(() => {
-		if (pollInterval) clearInterval(pollInterval);
+		poller?.stop();
 	});
 </script>
+
+<svelte:window ondragover={onWindowDragOver} ondrop={onWindowDrop} />
 
 <header class="page-header">
 	<div class="page-header-inner flex-between">
@@ -294,7 +448,12 @@
 				<span class="crumb active">Contract Repository</span>
 			</div>
 			<div class="header-content">
-				<h1>Contracts Portfolio</h1>
+				<div class="header-title-row">
+					<span class="header-icon">
+						<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="16" y1="13" x2="8" y2="13"/><line x1="16" y1="17" x2="8" y2="17"/><polyline points="10 9 9 9 8 9"/></svg>
+					</span>
+					<h1>Contracts Portfolio</h1>
+				</div>
 				<p class="subtitle text-secondary">Manage, search, and analyze your legal repository and obligations density.</p>
 			</div>
 		</div>
@@ -303,16 +462,16 @@
 			<input 
 				type="file" 
 				accept="application/pdf" 
+				multiple
 				bind:this={fileInput} 
 				onchange={handleFileChange} 
 				style="display: none;" 
 			/>
-			<button class="btn btn-primary" onclick={triggerUpload} disabled={isUploading}>
-				{#if isUploading}
-					<span class="spinner spinner-sm"></span> Uploading...
-				{:else}
-					<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="17 8 12 3 7 8"/><line x1="12" y1="3" x2="12" y2="15"/></svg>
-					Upload Contract
+			<button class="btn btn-primary" onclick={openUploadModal}>
+				<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="17 8 12 3 7 8"/><line x1="12" y1="3" x2="12" y2="15"/></svg>
+				Upload Contract
+				{#if uploadItems.some((it) => it.status === 'uploading' || it.status === 'queued')}
+					<span class="spinner spinner-sm"></span>
 				{/if}
 			</button>
 			<button class="btn btn-secondary" onclick={() => pasteModalOpen = true} disabled={isUploading}>
@@ -415,6 +574,7 @@
 		{#each filteredContracts as contract, i}
 			<div
 				class="table-row clickable-row stagger-entry"
+				class:processing-row={contract.status === 'PROCESSING'}
 				style="--index: {i}"
 				role="button"
 				tabindex="0"
@@ -526,6 +686,25 @@
 						<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 6h18"></path><path d="M19 6v14c0 1-1 2-2 2H7c-1 0-2-1-2-2V6"></path><path d="M8 6V4c0-1 1-2 2-2h4c1 0 2 1 2 2v2"></path></svg>
 					</button>
 				</div>
+
+				{#if contract.status === 'PROCESSING'}
+					{@const prog = parseProcessingProgress(contract.metadata_json?.processing_step)}
+					<div class="row-progress">
+						<div class="row-progress-bar">
+							{#if prog.ratio !== null}
+								<div class="row-progress-fill" style="width: {Math.round(prog.ratio * 100)}%"></div>
+							{:else}
+								<div class="row-progress-indeterminate"></div>
+							{/if}
+						</div>
+						<div class="row-progress-meta">
+							<span class="row-progress-step" title={prog.stepLabel}>{prog.stepLabel}</span>
+							{#if prog.current !== null}
+								<span class="row-progress-count">{prog.current}/{prog.total} · {Math.round((prog.ratio ?? 0) * 100)}%</span>
+							{/if}
+						</div>
+					</div>
+				{/if}
 			</div>
 		{/each}
 	</div>
@@ -583,43 +762,259 @@
 	</div>
 {/if}
 
+{#if uploadModalOpen}
+	<div class="modal-root">
+		<button type="button" class="modal-backdrop" aria-label="Close" onclick={closeUploadModal}></button>
+		<div class="modal-content modal-content-wide" role="dialog" aria-modal="true">
+			<div class="modal-header">
+				<div class="modal-icon info">
+					<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="17 8 12 3 7 8"/><line x1="12" y1="3" x2="12" y2="15"/></svg>
+				</div>
+				<h3>Upload Contracts</h3>
+			</div>
+			<div class="modal-body">
+				<div
+					class="dropzone"
+					class:dragging={isDragging}
+					role="button"
+					tabindex="0"
+					aria-label="Drag PDF files here or browse to upload"
+					ondragover={onZoneDragOver}
+					ondragenter={onZoneDragOver}
+					ondragleave={onZoneDragLeave}
+					ondrop={onZoneDrop}
+					onclick={triggerUpload}
+					onkeydown={(e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); triggerUpload(); } }}
+				>
+					<svg class="dropzone-icon" width="40" height="40" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="17 8 12 3 7 8"/><line x1="12" y1="3" x2="12" y2="15"/></svg>
+					<p class="dropzone-title">{isDragging ? 'Drop to upload' : 'Drag & drop PDF contracts here'}</p>
+					<p class="dropzone-sub text-tertiary">or <span class="dropzone-link">browse files</span> · PDF only · up to {formatBytes(MAX_UPLOAD_BYTES)} each</p>
+				</div>
+
+				{#if uploadItems.length > 0}
+					<ul class="upload-list">
+						{#each uploadItems as item (item.id)}
+							<li class="upload-item upload-{item.status}">
+								<div class="upload-item-icon" aria-hidden="true">
+									{#if item.status === 'done'}
+										<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polyline points="20 6 9 17 4 12"/></svg>
+									{:else if item.status === 'error' || item.status === 'invalid'}
+										<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
+									{:else}
+										<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/></svg>
+									{/if}
+								</div>
+								<div class="upload-item-main">
+									<div class="upload-item-row">
+										<span class="upload-item-name" title={item.name}>{item.name}</span>
+										<span class="upload-item-size text-tertiary tabular-nums">{formatBytes(item.size)}</span>
+									</div>
+									{#if item.status === 'uploading'}
+										<div class="upload-bar"><div class="upload-bar-fill" style="width: {item.progress}%"></div></div>
+									{:else if item.status === 'queued'}
+										<div class="upload-bar"><div class="upload-bar-fill queued" style="width: 100%"></div></div>
+									{/if}
+									<div class="upload-item-status">
+										{#if item.status === 'uploading'}
+											<span class="text-tertiary tabular-nums">Uploading… {item.progress}%</span>
+										{:else if item.status === 'queued'}
+											<span class="text-tertiary">Queued</span>
+										{:else if item.status === 'done'}
+											<span class="status-done">Uploaded · processing started</span>
+										{:else if item.status === 'invalid'}
+											<span class="status-error">{item.message}</span>
+										{:else if item.status === 'error'}
+											<span class="status-error">{item.message}</span>
+										{/if}
+									</div>
+								</div>
+								<div class="upload-item-actions">
+									{#if item.status === 'error'}
+										<button class="upload-action-btn" onclick={() => retryItem(item.id)}>Retry</button>
+									{/if}
+									{#if item.status !== 'uploading'}
+										<button class="upload-action-btn icon" aria-label="Remove" onclick={() => removeItem(item.id)}>
+											<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
+										</button>
+									{/if}
+								</div>
+							</li>
+						{/each}
+					</ul>
+				{/if}
+			</div>
+			<div class="modal-footer flex-end gap-12">
+				{#if uploadItems.some((it) => it.status === 'done')}
+					<span class="upload-summary text-tertiary">{uploadItems.filter((it) => it.status === 'done').length} uploaded</span>
+				{/if}
+				<button class="btn btn-secondary" onclick={triggerUpload}>Browse files</button>
+				<button class="btn btn-primary" onclick={closeUploadModal}>Done</button>
+			</div>
+		</div>
+	</div>
+{/if}
+
 <style>
-	.page-header {
-		padding: 32px 40px 24px;
-		border-bottom: 1px solid var(--border-subtle);
-		background: var(--bg-sidebar);
-	}
-
-	.breadcrumbs {
+	/* ---- Upload dropzone ---- */
+	.dropzone {
 		display: flex;
+		flex-direction: column;
 		align-items: center;
-		gap: 8px;
-		font-size: 13px;
-		margin-bottom: 12px;
+		justify-content: center;
+		gap: 6px;
+		width: 100%;
+		padding: 36px 24px;
+		border: 2px dashed var(--border-strong);
+		border-radius: 12px;
+		background: var(--bg-elevated, var(--bg-sidebar));
+		color: var(--text-secondary);
+		cursor: pointer;
+		text-align: center;
+		transition: border-color 0.15s ease, background 0.15s ease, transform 0.05s ease;
 	}
-
-	.crumb {
-		color: var(--text-tertiary);
+	.dropzone:hover {
+		border-color: var(--accent-primary);
 	}
-
-	.crumb.active {
+	.dropzone.dragging {
+		border-color: var(--accent-primary);
+		background: color-mix(in srgb, var(--accent-primary) 10%, transparent);
+	}
+	.dropzone-icon {
+		color: var(--accent-primary);
+		margin-bottom: 4px;
+	}
+	.dropzone-title {
+		margin: 0;
+		font-size: var(--fs-md, 14px);
+		font-weight: 600;
 		color: var(--text-primary);
+	}
+	.dropzone-sub {
+		margin: 0;
+		font-size: var(--fs-sm, 13px);
+	}
+	.dropzone-link {
+		color: var(--accent-primary);
 		font-weight: 500;
 	}
 
-	.separator {
-		color: var(--border-strong);
+	.upload-list {
+		list-style: none;
+		margin: 16px 0 0;
+		padding: 0;
+		display: flex;
+		flex-direction: column;
+		gap: 8px;
+		max-height: 280px;
+		overflow-y: auto;
 	}
-
-	.header-content h1 {
-		font-size: 20px;
-		font-weight: 600;
-		margin: 0;
+	.upload-item {
+		display: flex;
+		align-items: flex-start;
+		gap: 12px;
+		padding: 10px 12px;
+		border: 1px solid var(--border-subtle);
+		border-radius: 8px;
+		background: var(--bg-sidebar);
 	}
-
-	.subtitle {
-		font-size: 13px;
-		margin-top: 4px;
+	.upload-item-icon {
+		flex-shrink: 0;
+		display: flex;
+		align-items: center;
+		justify-content: center;
+		width: 28px;
+		height: 28px;
+		border-radius: 6px;
+		background: var(--bg-elevated, var(--panel));
+		color: var(--text-tertiary);
+	}
+	.upload-item.upload-done .upload-item-icon {
+		background: color-mix(in srgb, var(--accent-success, #16a34a) 16%, transparent);
+		color: var(--accent-success, #16a34a);
+	}
+	.upload-item.upload-error .upload-item-icon,
+	.upload-item.upload-invalid .upload-item-icon {
+		background: color-mix(in srgb, var(--accent-danger, #dc2626) 16%, transparent);
+		color: var(--accent-danger, #dc2626);
+	}
+	.upload-item-main {
+		flex: 1;
+		min-width: 0;
+	}
+	.upload-item-row {
+		display: flex;
+		align-items: baseline;
+		justify-content: space-between;
+		gap: 12px;
+	}
+	.upload-item-name {
+		font-size: var(--fs-sm, 13px);
+		font-weight: 500;
+		color: var(--text-primary);
+		white-space: nowrap;
+		overflow: hidden;
+		text-overflow: ellipsis;
+	}
+	.upload-item-size {
+		flex-shrink: 0;
+		font-size: var(--fs-xs, 12px);
+	}
+	.upload-bar {
+		height: 5px;
+		margin: 6px 0 4px;
+		border-radius: 999px;
+		background: var(--border-subtle);
+		overflow: hidden;
+	}
+	.upload-bar-fill {
+		height: 100%;
+		border-radius: 999px;
+		background: var(--accent-primary);
+		transition: width 0.2s ease;
+	}
+	.upload-bar-fill.queued {
+		background: var(--border-strong);
+		opacity: 0.6;
+	}
+	.upload-item-status {
+		font-size: var(--fs-xs, 12px);
+	}
+	.status-done {
+		color: var(--accent-success, #16a34a);
+		font-weight: 500;
+	}
+	.status-error {
+		color: var(--accent-danger, #dc2626);
+		font-weight: 500;
+	}
+	.upload-item-actions {
+		flex-shrink: 0;
+		display: flex;
+		align-items: center;
+		gap: 4px;
+	}
+	.upload-action-btn {
+		background: transparent;
+		border: 1px solid var(--border-subtle);
+		border-radius: 6px;
+		color: var(--text-secondary);
+		font-size: var(--fs-xs, 12px);
+		padding: 4px 8px;
+		cursor: pointer;
+		transition: background 0.12s ease, color 0.12s ease;
+	}
+	.upload-action-btn:hover {
+		background: var(--bg-elevated, var(--panel));
+		color: var(--text-primary);
+	}
+	.upload-action-btn.icon {
+		display: flex;
+		align-items: center;
+		padding: 4px;
+	}
+	.upload-summary {
+		margin-right: auto;
+		font-size: var(--fs-sm, 13px);
 	}
 
 	.header-actions {
@@ -794,6 +1189,82 @@
 		align-items: center;
 		gap: 8px;
 		color: var(--text-secondary);
+	}
+
+	/* Per-contract processing progress (wraps to a full-width line under the row) */
+	.processing-row {
+		flex-wrap: wrap;
+	}
+
+	.row-progress {
+		flex-basis: 100%;
+		width: 100%;
+		display: flex;
+		flex-direction: column;
+		gap: 5px;
+		margin-top: 10px;
+	}
+
+	.row-progress-bar {
+		position: relative;
+		height: 4px;
+		width: 100%;
+		background: var(--bg-active);
+		border-radius: 99px;
+		overflow: hidden;
+	}
+
+	.row-progress-fill {
+		height: 100%;
+		background: var(--accent-primary);
+		border-radius: 99px;
+		transition: width 400ms var(--ease-out);
+	}
+
+	.row-progress-indeterminate {
+		position: absolute;
+		top: 0;
+		left: -35%;
+		height: 100%;
+		width: 35%;
+		background: var(--accent-primary);
+		border-radius: 99px;
+		animation: row-progress-slide 1.2s ease-in-out infinite;
+	}
+
+	@keyframes row-progress-slide {
+		0% { left: -35%; }
+		100% { left: 100%; }
+	}
+
+	.row-progress-meta {
+		display: flex;
+		justify-content: space-between;
+		gap: 12px;
+		font-size: var(--fs-2xs);
+		color: var(--text-tertiary);
+	}
+
+	.row-progress-step {
+		white-space: nowrap;
+		overflow: hidden;
+		text-overflow: ellipsis;
+	}
+
+	.row-progress-count {
+		flex-shrink: 0;
+		font-variant-numeric: tabular-nums;
+		color: var(--text-secondary);
+		font-weight: 600;
+	}
+
+	@media (prefers-reduced-motion: reduce) {
+		.row-progress-indeterminate {
+			animation: none;
+			left: 0;
+			width: 100%;
+			opacity: 0.4;
+		}
 	}
 
 	/* Miniature Severity Stacked Density Bar */

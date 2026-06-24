@@ -3,6 +3,7 @@
 	import { goto } from '$app/navigation';
 	import { toast } from '$lib/toastStore';
 	import { apiFetch } from '$lib/api';
+	import { createAdaptivePoller, type AdaptivePoller } from '$lib/poller';
 
 	type ContractSummary = {
 		id: string;
@@ -15,7 +16,8 @@
 
 	
 	let contracts: ContractSummary[] = $state([]);
-	let pollInterval: any;
+	let loaded = $state(false);
+	let poller: AdaptivePoller;
 	
 	// Track which contracts were previously in PROCESSING state
 	let processingIds = new Set<string>();
@@ -43,16 +45,24 @@
 			}
 		} catch (err) {
 			console.error("Failed to fetch contracts:", err);
+		} finally {
+			loaded = true;
 		}
 	}
 
 	onMount(() => {
-		fetchContracts();
-		pollInterval = setInterval(fetchContracts, 3000);
+		poller = createAdaptivePoller({
+			fn: fetchContracts,
+			// Poll fast only while the AI pipeline is working; otherwise back off.
+			isActive: () => processingContracts.length > 0,
+			activeMs: 3000,
+			idleMs: 30000
+		});
+		poller.start();
 	});
 
 	onDestroy(() => {
-		if (pollInterval) clearInterval(pollInterval);
+		poller?.stop();
 	});
 
 
@@ -177,6 +187,13 @@
 	}
 </script>
 
+{#snippet infoTip(text: string)}
+	<button class="info-tip" type="button" aria-label={text}>
+		<svg aria-hidden="true" width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><line x1="12" y1="16" x2="12" y2="12"/><line x1="12" y1="8" x2="12.01" y2="8"/></svg>
+		<span class="info-tip-content" aria-hidden="true">{text}</span>
+	</button>
+{/snippet}
+
 <header class="page-header">
 	<div class="page-header-inner">
 		<div class="breadcrumbs">
@@ -186,21 +203,72 @@
 		</div>
 		
 		<div class="header-content">
-			<h1>Executive Risk Intelligence</h1>
+			<div class="header-title-row">
+				<span class="header-icon">
+					<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="3" width="18" height="18" rx="2"/><path d="M3 9h18M9 21V9"/></svg>
+				</span>
+				<h1>Executive Risk Intelligence</h1>
+			</div>
 		</div>
 	</div>
 </header>
 
 <div class="page-content" id="dashboard-main-content">
+	{#if !loaded}
+		<!-- Loading skeletons while the first fetch resolves -->
+		<div class="metric-row">
+			{#each Array.from({ length: 4 }) as _, i (i)}
+				<div class="metric-card panel">
+					<div class="skeleton sk-line sk-label"></div>
+					<div class="skeleton sk-line sk-value"></div>
+					<div class="skeleton sk-line sk-desc"></div>
+				</div>
+			{/each}
+		</div>
+
+		<div class="heatmap-section panel">
+			<div class="skeleton sk-line sk-title"></div>
+			<div class="skeleton sk-bar"></div>
+			<div class="sk-legend-row">
+				{#each Array.from({ length: 4 }) as _, i (i)}
+					<div class="skeleton sk-line sk-legend"></div>
+				{/each}
+			</div>
+		</div>
+
+		<div class="dashboard-grid">
+			{#each Array.from({ length: 2 }) as _, i (i)}
+				<div class="grid-card panel">
+					<div class="skeleton sk-line sk-title"></div>
+					{#each Array.from({ length: 4 }) as __, j (j)}
+						<div class="skeleton sk-line sk-row"></div>
+					{/each}
+				</div>
+			{/each}
+		</div>
+	{:else if totalContracts === 0}
+		<!-- First-run onboarding: no contracts yet -->
+		<div class="empty-hero panel">
+			<div class="empty-hero-icon">
+				<svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="12" y1="18" x2="12" y2="12"/><line x1="9" y1="15" x2="15" y2="15"/></svg>
+			</div>
+			<h2>Bring your contracts to life</h2>
+			<p>Upload your first agreement and ContractsPulse will surface portfolio health, an obligation risk heatmap, and AI-flagged critical clauses — all on this dashboard.</p>
+			<button type="button" class="btn btn-primary empty-hero-cta" onclick={() => goto('/contracts')}>
+				<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="17 8 12 3 7 8"/><line x1="12" y1="3" x2="12" y2="15"/></svg>
+				Upload your first contract
+			</button>
+		</div>
+	{:else}
 	<!-- Vercel-style premium executive KPI row -->
 	<div class="metric-row">
 		<div class="metric-card panel" id="kpi-portfolio-health">
-			<div class="metric-label">Portfolio Health Index</div>
+			<div class="metric-label">Portfolio Health{@render infoTip("A 0–100 score. Starts at 100 and drops based on risk-weighted obligations (Critical ×10, High ×5, Medium ×2) as a share of all obligations. Higher is better.")}</div>
 			<div class="metric-value-container">
 				<div class="metric-value" class:text-success={portfolioHealthIndex >= 90} class:text-warning={portfolioHealthIndex >= 70 && portfolioHealthIndex < 90} class:text-danger={portfolioHealthIndex < 70}>
 					{portfolioHealthIndex}%
 				</div>
-				<span class="metric-trend" class:trend-up={portfolioHealthIndex >= 90} class:trend-warn={portfolioHealthIndex >= 70 && portfolioHealthIndex < 90} class:trend-down={portfolioHealthIndex < 70}>
+				<span class="badge" class:badge-success={portfolioHealthIndex >= 90} class:badge-warning={portfolioHealthIndex >= 70 && portfolioHealthIndex < 90} class:badge-danger={portfolioHealthIndex < 70}>
 					{#if portfolioHealthIndex >= 90}
 						Healthy
 					{:else}
@@ -212,16 +280,16 @@
 		</div>
 
 		<div class="metric-card panel" id="kpi-vulnerability-ratio">
-			<div class="metric-label">Vulnerability Ratio</div>
+			<div class="metric-label">Contracts at Risk{@render infoTip("The share of analyzed contracts that contain at least one High or Critical risk clause.")}</div>
 			<div class="metric-value-container">
 				<div class="metric-value" class:text-danger={vulnerabilityConcentration > 30} class:text-warning={vulnerabilityConcentration > 0 && vulnerabilityConcentration <= 30} class:text-success={vulnerabilityConcentration === 0}>
 					{vulnerabilityConcentration}%
 				</div>
-				<span class="metric-trend" class:trend-down={vulnerabilityConcentration > 30} class:trend-up={vulnerabilityConcentration === 0}>
+				<span class="badge" class:badge-danger={vulnerabilityConcentration > 30} class:badge-warning={vulnerabilityConcentration > 0 && vulnerabilityConcentration <= 30} class:badge-success={vulnerabilityConcentration === 0}>
 					{#if vulnerabilityConcentration > 0}
-						Liable
+						At risk
 					{:else}
-						Fully Shielded
+						All protected
 					{/if}
 				</span>
 			</div>
@@ -229,10 +297,10 @@
 		</div>
 
 		<div class="metric-card panel" id="kpi-obligations-count">
-			<div class="metric-label">Analyzed Obligations</div>
+			<div class="metric-label">Obligations Analyzed{@render infoTip("Total contract clauses extracted and risk-categorized by the AI across all uploaded documents.")}</div>
 			<div class="metric-value-container">
 				<div class="metric-value">{totalObligations}</div>
-				<span class="metric-trend trend-neutral">
+				<span class="badge badge-secondary">
 					{totalContracts} docs
 				</span>
 			</div>
@@ -240,7 +308,7 @@
 		</div>
 
 		<div class="metric-card panel" id="kpi-queue-status">
-			<div class="metric-label">Insight Velocity</div>
+			<div class="metric-label">Analysis Status{@render infoTip("How many contracts the AI is processing right now. \"Ready\" means the queue is empty and all uploads are done.")}</div>
 			<div class="metric-value-container">
 				{#if processingContracts.length > 0}
 					<div class="metric-value text-warning">
@@ -253,7 +321,7 @@
 					<div class="metric-value text-success">
 						Ready
 					</div>
-					<span class="metric-trend trend-up">
+					<span class="badge badge-success">
 						Idle
 					</span>
 				{/if}
@@ -273,8 +341,8 @@
 	<div class="heatmap-section panel" id="kpi-obligation-heatmap">
 		<div class="heatmap-header">
 			<div>
-				<h3>Obligation Risk Distribution</h3>
-				<p class="text-tertiary">Real-time mapping of severity and liability categories across your portfolio</p>
+				<h3>Risk Distribution</h3>
+				<p class="text-tertiary">How your obligations break down by risk severity</p>
 			</div>
 			<div class="total-badge">{totalObligations} Obligations</div>
 		</div>
@@ -288,16 +356,24 @@
 			<div class="stacked-bar-container">
 				<div class="stacked-bar-progress">
 					{#if allRiskCounts.critical > 0}
-						<div class="bar-segment bar-critical" style="width: {critPct}%" title="Critical: {allRiskCounts.critical} ({Math.round(critPct)}%)"></div>
+						<div class="bar-segment bar-critical" style="width: {critPct}%" title="Critical: {allRiskCounts.critical} ({Math.round(critPct)}%)">
+							{#if critPct >= 12}<span class="bar-label">Crit {Math.round(critPct)}%</span>{:else if critPct >= 7}<span class="bar-label">{Math.round(critPct)}%</span>{/if}
+						</div>
 					{/if}
 					{#if allRiskCounts.high > 0}
-						<div class="bar-segment bar-high" style="width: {highPct}%" title="High: {allRiskCounts.high} ({Math.round(highPct)}%)"></div>
+						<div class="bar-segment bar-high" style="width: {highPct}%" title="High: {allRiskCounts.high} ({Math.round(highPct)}%)">
+							{#if highPct >= 12}<span class="bar-label">High {Math.round(highPct)}%</span>{:else if highPct >= 7}<span class="bar-label">{Math.round(highPct)}%</span>{/if}
+						</div>
 					{/if}
 					{#if allRiskCounts.medium > 0}
-						<div class="bar-segment bar-medium" style="width: {medPct}%" title="Medium: {allRiskCounts.medium} ({Math.round(medPct)}%)"></div>
+						<div class="bar-segment bar-medium" style="width: {medPct}%" title="Medium: {allRiskCounts.medium} ({Math.round(medPct)}%)">
+							{#if medPct >= 12}<span class="bar-label">Med {Math.round(medPct)}%</span>{:else if medPct >= 7}<span class="bar-label">{Math.round(medPct)}%</span>{/if}
+						</div>
 					{/if}
 					{#if allRiskCounts.low > 0}
-						<div class="bar-segment bar-low" style="width: {lowPct}%" title="Low: {allRiskCounts.low} ({Math.round(lowPct)}%)"></div>
+						<div class="bar-segment bar-low" style="width: {lowPct}%" title="Low: {allRiskCounts.low} ({Math.round(lowPct)}%)">
+							{#if lowPct >= 12}<span class="bar-label">Low {Math.round(lowPct)}%</span>{:else if lowPct >= 7}<span class="bar-label">{Math.round(lowPct)}%</span>{/if}
+						</div>
 					{/if}
 				</div>
 
@@ -305,28 +381,32 @@
 					<div class="legend-item">
 						<span class="legend-dot dot-critical"></span>
 						<span class="legend-label">Critical</span>
-						<span class="legend-count">({allRiskCounts.critical})</span>
+						<span class="legend-count">{allRiskCounts.critical} · {Math.round(critPct)}%</span>
 					</div>
 					<div class="legend-item">
 						<span class="legend-dot dot-high"></span>
 						<span class="legend-label">High</span>
-						<span class="legend-count">({allRiskCounts.high})</span>
+						<span class="legend-count">{allRiskCounts.high} · {Math.round(highPct)}%</span>
 					</div>
 					<div class="legend-item">
 						<span class="legend-dot dot-medium"></span>
 						<span class="legend-label">Medium</span>
-						<span class="legend-count">({allRiskCounts.medium})</span>
+						<span class="legend-count">{allRiskCounts.medium} · {Math.round(medPct)}%</span>
 					</div>
 					<div class="legend-item">
 						<span class="legend-dot dot-low"></span>
 						<span class="legend-label">Low</span>
-						<span class="legend-count">({allRiskCounts.low})</span>
+						<span class="legend-count">{allRiskCounts.low} · {Math.round(lowPct)}%</span>
 					</div>
 				</div>
 			</div>
 		{:else}
-			<div class="heatmap-empty text-tertiary">
-				Upload contracts or paste text to display your risk distribution heatmap.
+			<div class="empty-state">
+				<div class="empty-state-icon">
+					<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="18" y1="20" x2="18" y2="10"/><line x1="12" y1="20" x2="12" y2="4"/><line x1="6" y1="20" x2="6" y2="14"/></svg>
+				</div>
+				<div class="empty-state-title">No obligations analyzed yet</div>
+				<p class="empty-state-text">Upload a contract or paste text and your risk distribution heatmap will appear here once analysis completes.</p>
 			</div>
 		{/if}
 	</div>
@@ -336,8 +416,8 @@
 		<!-- Left: Top Exposure Vectors -->
 		<div class="grid-card panel" id="kpi-exposure-vectors">
 			<div class="grid-card-header">
-				<h3>Top Exposure Vectors</h3>
-				<p class="text-tertiary font-xs">Most vulnerable agreement clause categories</p>
+				<h3>Top Risk Categories</h3>
+				<p class="text-tertiary font-xs">Clause types with the most High and Critical findings</p>
 			</div>
 
 			<div class="vector-list">
@@ -349,10 +429,10 @@
 								<span class="vector-title">{v.type}</span>
 								<div class="vector-meta">
 									{#if v.critical > 0}
-										<span class="mini-badge badge-critical">{v.critical} Crit</span>
+										<span class="badge badge-sm badge-danger">{v.critical} Crit</span>
 									{/if}
 									{#if v.high > 0}
-										<span class="mini-badge badge-high">{v.high} High</span>
+										<span class="badge badge-sm badge-danger">{v.high} High</span>
 									{/if}
 									<span class="vector-obligations-count text-tertiary">({v.total})</span>
 								</div>
@@ -368,8 +448,12 @@
 						</div>
 					{/each}
 				{:else}
-					<div class="empty-state text-tertiary">
-						No exposures classified. Complete standard contract reviews first.
+					<div class="empty-state">
+						<div class="empty-state-icon">
+							<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M22 12h-4l-3 9L9 3l-3 9H2"/></svg>
+						</div>
+						<div class="empty-state-title">No exposures classified yet</div>
+						<p class="empty-state-text">Clause risk categories appear here once a contract finishes analysis.</p>
 					</div>
 				{/if}
 			</div>
@@ -378,8 +462,8 @@
 		<!-- Right: Recent Critical Triggers Feed -->
 		<div class="grid-card panel" id="kpi-critical-feed">
 			<div class="grid-card-header">
-				<h3>Recent Critical Triggers</h3>
-				<p class="text-tertiary font-xs">Chronological alerts for high-liability findings</p>
+				<h3>Recent High-Risk Findings</h3>
+				<p class="text-tertiary font-xs">Latest High and Critical issues across your contracts</p>
 			</div>
 
 			<div class="triggers-feed">
@@ -388,7 +472,7 @@
 						<div class="trigger-card stagger-entry" style="--index: {i}">
 							<div class="trigger-top">
 								<div class="trigger-title-container">
-									<span class="trigger-risk-pill" class:pill-critical={trigger.risk_level === 'CRITICAL'} class:pill-high={trigger.risk_level === 'HIGH'}>
+									<span class="badge badge-sm badge-danger">
 										{trigger.risk_level}
 									</span>
 									<span class="trigger-clause-type">{trigger.clause_type}</span>
@@ -405,19 +489,24 @@
 							<div class="trigger-footer">
 								<button class="btn-review" onclick={() => goto(`/contracts/${trigger.contractId}`)}>
 									Review Redlines
-									<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><line x1="5" y1="12" x2="19" y2="12"/><polyline points="12 5 19 12 12 19"/></svg>
+									<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="5" y1="12" x2="19" y2="12"/><polyline points="12 5 19 12 12 19"/></svg>
 								</button>
 							</div>
 						</div>
 					{/each}
 				{:else}
-					<div class="empty-state text-tertiary">
-						No active risk alerts. Standard portfolio health remains secure.
+					<div class="empty-state">
+						<div class="empty-state-icon success">
+							<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/><polyline points="9 12 11 14 15 10"/></svg>
+						</div>
+						<div class="empty-state-title">No critical risks found</div>
+						<p class="empty-state-text">High and critical findings will surface here as your contracts are analyzed.</p>
 					</div>
 				{/if}
 			</div>
 		</div>
 	</div>
+	{/if}
 </div>
 
 
@@ -446,28 +535,73 @@
 		display: flex;
 		flex-direction: column;
 		position: relative;
-		overflow: hidden;
-		transition: border-color 200ms cubic-bezier(0.23, 1, 0.32, 1), 
-		            box-shadow 200ms cubic-bezier(0.23, 1, 0.32, 1),
-		            transform 160ms cubic-bezier(0.23, 1, 0.32, 1);
-	}
-
-	.metric-card:hover {
-		border-color: var(--border-glass-hover);
-		box-shadow: var(--shadow-md);
-	}
-
-	.metric-card:active {
-		transform: scale(0.975);
 	}
 
 	.metric-label {
-		font-size: 11px;
+		display: flex;
+		align-items: center;
+		gap: 6px;
+		font-size: var(--fs-2xs);
 		text-transform: uppercase;
 		letter-spacing: 0.8px;
 		color: var(--text-secondary);
 		font-weight: 600;
 		margin-bottom: 8px;
+	}
+
+	/* Info tooltip (explains how a KPI is computed) */
+	.info-tip {
+		position: relative;
+		display: inline-flex;
+		align-items: center;
+		justify-content: center;
+		padding: 0;
+		border: none;
+		background: none;
+		color: var(--text-tertiary);
+		cursor: help;
+		line-height: 0;
+	}
+
+	.info-tip:hover {
+		color: var(--text-secondary);
+	}
+
+	.info-tip svg {
+		display: block;
+	}
+
+	.info-tip-content {
+		position: absolute;
+		top: calc(100% + 8px);
+		left: 50%;
+		transform: translate(-50%, -4px);
+		width: 210px;
+		padding: 8px 10px;
+		background: var(--bg-panel);
+		border: 1px solid var(--border-strong);
+		border-radius: 8px;
+		box-shadow: var(--shadow-lg);
+		color: var(--text-secondary);
+		font-size: var(--fs-xs);
+		font-weight: 400;
+		line-height: 1.45;
+		text-transform: none;
+		letter-spacing: normal;
+		text-align: left;
+		opacity: 0;
+		visibility: hidden;
+		transition: opacity 120ms ease, transform 120ms ease, visibility 120ms;
+		z-index: 50;
+		pointer-events: none;
+	}
+
+	.info-tip:hover .info-tip-content,
+	.info-tip:focus .info-tip-content,
+	.info-tip:focus-visible .info-tip-content {
+		opacity: 1;
+		visibility: visible;
+		transform: translate(-50%, 0);
 	}
 
 	.metric-value-container {
@@ -478,42 +612,15 @@
 	}
 
 	.metric-value {
-		font-size: 28px;
-		font-weight: 700;
+		font-size: var(--fs-3xl);
+		font-weight: var(--fw-bold);
 		color: var(--text-primary);
-		line-height: 1.1;
+		line-height: var(--lh-tight);
 		font-variant-numeric: tabular-nums;
 	}
 
-	.metric-trend {
-		font-size: 11px;
-		font-weight: 600;
-		padding: 2px 6px;
-		border-radius: 4px;
-	}
-
-	.trend-up {
-		background: rgba(var(--color-low-rgb), 0.1);
-		color: var(--color-low);
-	}
-
-	.trend-warn {
-		background: rgba(var(--color-medium-rgb), 0.1);
-		color: var(--color-medium);
-	}
-
-	.trend-down {
-		background: rgba(var(--color-critical-rgb), 0.1);
-		color: var(--color-critical);
-	}
-
-	.trend-neutral {
-		background: var(--bg-hover);
-		color: var(--text-secondary);
-	}
-
 	.metric-description {
-		font-size: 12px;
+		font-size: var(--fs-xs);
 		color: var(--text-tertiary);
 		margin: 4px 0 0 0;
 		line-height: 1.4;
@@ -542,18 +649,18 @@
 
 	.heatmap-header h3 {
 		margin: 0 0 4px 0;
-		font-size: 16px;
+		font-size: var(--fs-md);
 		font-weight: 600;
 		color: var(--text-primary);
 	}
 
 	.heatmap-header p {
 		margin: 0;
-		font-size: 13px;
+		font-size: var(--fs-sm);
 	}
 
 	.total-badge {
-		font-size: 11px;
+		font-size: var(--fs-2xs);
 		font-weight: 600;
 		background: var(--bg-hover);
 		color: var(--text-secondary);
@@ -569,8 +676,8 @@
 	}
 
 	.stacked-bar-progress {
-		height: 10px;
-		border-radius: 99px;
+		height: 28px;
+		border-radius: 8px;
 		overflow: hidden;
 		display: flex;
 		background: var(--bg-hover);
@@ -578,12 +685,27 @@
 
 	.bar-segment {
 		height: 100%;
+		display: flex;
+		align-items: center;
+		justify-content: center;
+		min-width: 0;
 		transition: opacity 150ms ease;
-		cursor: pointer;
+		cursor: default;
 	}
 
 	.bar-segment:hover {
 		opacity: 0.85;
+	}
+
+	.bar-label {
+		font-size: var(--fs-2xs);
+		font-weight: 700;
+		color: #fff;
+		font-variant-numeric: tabular-nums;
+		white-space: nowrap;
+		padding: 0 4px;
+		text-shadow: 0 1px 2px rgba(0, 0, 0, 0.45);
+		pointer-events: none;
 	}
 
 	.bar-critical { background: var(--color-critical); }
@@ -601,7 +723,7 @@
 		display: flex;
 		align-items: center;
 		gap: 6px;
-		font-size: 12px;
+		font-size: var(--fs-xs);
 	}
 
 	.legend-dot {
@@ -622,12 +744,6 @@
 
 	.legend-count {
 		color: var(--text-tertiary);
-	}
-
-	.heatmap-empty {
-		padding: 24px;
-		text-align: center;
-		font-size: 13px;
 	}
 
 	/* Split grids */
@@ -652,13 +768,13 @@
 
 	.grid-card-header h3 {
 		margin: 0 0 4px 0;
-		font-size: 16px;
+		font-size: var(--fs-md);
 		font-weight: 600;
 		color: var(--text-primary);
 	}
 
 	.font-xs {
-		font-size: 12px;
+		font-size: var(--fs-xs);
 	}
 
 	.vector-list {
@@ -680,7 +796,7 @@
 	}
 
 	.vector-title {
-		font-size: 13px;
+		font-size: var(--fs-sm);
 		font-weight: 500;
 		color: var(--text-primary);
 	}
@@ -691,28 +807,8 @@
 		gap: 6px;
 	}
 
-	.mini-badge {
-		font-size: 9px;
-		font-weight: 700;
-		padding: 1px 4px;
-		border-radius: 3px;
-		text-transform: uppercase;
-	}
-
-	.badge-critical {
-		background: rgba(var(--color-critical-rgb), 0.1);
-		color: var(--color-critical);
-		border: 1px solid rgba(var(--color-critical-rgb), 0.2);
-	}
-
-	.badge-high {
-		background: rgba(var(--color-high-rgb), 0.1);
-		color: var(--color-high);
-		border: 1px solid rgba(var(--color-high-rgb), 0.2);
-	}
-
 	.vector-obligations-count {
-		font-size: 11px;
+		font-size: var(--fs-2xs);
 	}
 
 	.vector-track {
@@ -769,32 +865,14 @@
 		gap: 8px;
 	}
 
-	.trigger-risk-pill {
-		font-size: 9px;
-		font-weight: 700;
-		padding: 2px 6px;
-		border-radius: 3px;
-		text-transform: uppercase;
-	}
-
-	.pill-critical {
-		background: var(--color-critical);
-		color: var(--text-on-accent);
-	}
-
-	.pill-high {
-		background: var(--color-high);
-		color: var(--text-on-accent);
-	}
-
 	.trigger-clause-type {
-		font-size: 12px;
+		font-size: var(--fs-xs);
 		font-weight: 600;
 		color: var(--text-primary);
 	}
 
 	.trigger-time {
-		font-size: 11px;
+		font-size: var(--fs-2xs);
 		color: var(--text-tertiary);
 	}
 
@@ -802,7 +880,7 @@
 		display: flex;
 		align-items: center;
 		gap: 6px;
-		font-size: 11px;
+		font-size: var(--fs-2xs);
 	}
 
 	.file-icon {
@@ -818,7 +896,7 @@
 
 	.trigger-snippet {
 		margin: 0;
-		font-size: 12px;
+		font-size: var(--fs-xs);
 		color: var(--text-secondary);
 		line-height: 1.4;
 		display: -webkit-box;
@@ -838,7 +916,7 @@
 		background: transparent;
 		border: none;
 		color: var(--accent-primary);
-		font-size: 11px;
+		font-size: var(--fs-2xs);
 		font-weight: 600;
 		cursor: pointer;
 		display: flex;
@@ -860,7 +938,108 @@
 	.empty-state {
 		padding: 32px;
 		text-align: center;
-		font-size: 13px;
+		font-size: var(--fs-sm);
+		display: flex;
+		flex-direction: column;
+		align-items: center;
+		gap: 4px;
+	}
+
+	.empty-state-icon {
+		width: 40px;
+		height: 40px;
+		border-radius: 10px;
+		display: flex;
+		align-items: center;
+		justify-content: center;
+		background: var(--bg-hover);
+		color: var(--text-tertiary);
+		margin-bottom: 8px;
+	}
+
+	.empty-state-icon.success {
+		background: rgba(var(--color-low-rgb), 0.12);
+		color: var(--color-low);
+	}
+
+	.empty-state-title {
+		font-size: var(--fs-sm);
+		font-weight: 600;
+		color: var(--text-secondary);
+	}
+
+	.empty-state-text {
+		margin: 0;
+		font-size: var(--fs-xs);
+		color: var(--text-tertiary);
+		max-width: 300px;
+		line-height: 1.45;
+	}
+
+	/* Loading skeletons */
+	.skeleton {
+		background: linear-gradient(90deg, var(--bg-hover) 25%, var(--bg-active) 37%, var(--bg-hover) 63%);
+		background-size: 400% 100%;
+		animation: skeleton-shimmer 1.4s ease infinite;
+		border-radius: 6px;
+	}
+
+	@keyframes skeleton-shimmer {
+		0% { background-position: 100% 50%; }
+		100% { background-position: 0 50%; }
+	}
+
+	.sk-line { height: 12px; margin-bottom: 10px; }
+	.sk-label { width: 50%; height: 10px; }
+	.sk-value { width: 70%; height: 28px; margin: 6px 0 10px; }
+	.sk-desc { width: 90%; height: 10px; margin-bottom: 0; }
+	.sk-title { width: 240px; max-width: 60%; height: 16px; margin-bottom: 18px; }
+	.sk-bar { width: 100%; height: 10px; border-radius: 99px; margin-bottom: 16px; }
+	.sk-legend-row { display: flex; gap: 16px; }
+	.sk-legend { width: 70px; height: 12px; margin-bottom: 0; }
+	.sk-row { width: 100%; height: 14px; margin-bottom: 14px; }
+
+	/* First-run onboarding hero */
+	.empty-hero {
+		display: flex;
+		flex-direction: column;
+		align-items: center;
+		text-align: center;
+		padding: 56px 32px;
+		gap: 8px;
+	}
+
+	.empty-hero-icon {
+		width: 56px;
+		height: 56px;
+		border-radius: 14px;
+		display: flex;
+		align-items: center;
+		justify-content: center;
+		background: rgba(var(--accent-primary-rgb), 0.1);
+		color: var(--accent-primary);
+		margin-bottom: 8px;
+	}
+
+	.empty-hero h2 {
+		font-size: var(--fs-lg);
+		font-weight: 600;
+		margin: 0;
+		color: var(--text-primary);
+	}
+
+	.empty-hero p {
+		font-size: var(--fs-sm);
+		color: var(--text-secondary);
+		max-width: 460px;
+		line-height: 1.5;
+		margin: 0 0 16px;
+	}
+
+	.empty-hero-cta {
+		display: inline-flex;
+		align-items: center;
+		gap: 8px;
 	}
 
 
@@ -894,6 +1073,9 @@
 			animation: none !important;
 			opacity: 1 !important;
 			transform: none !important;
+		}
+		.skeleton {
+			animation: none !important;
 		}
 	}
 </style>
