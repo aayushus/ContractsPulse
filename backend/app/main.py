@@ -2035,7 +2035,53 @@ def _format_redline_items_for_email(resolutions: list[dict], include: str) -> tu
                 "proposed_redline": proposed[:900],
             }
         )
-    text = "\n".join([f"- {b['clause_type']} ({b['status']}; originally {b['original_risk_level']})" for b in bullets]) or "- (none)"
+    lines = []
+    for b in bullets:
+        lines.append(f"- {b['clause_type']} (status: {b['status']}; originally {b['original_risk_level']})")
+        if b.get("proposed_redline"):
+            lines.append(f"  Suggested language: {b['proposed_redline']}")
+    text = "\n".join(lines) or "- (none)"
+    return text, bullets
+
+
+def _format_proposed_redlines_for_email(clauses: list, include: str) -> tuple[str, list[dict]]:
+    """Build email bullets from a contract's own proposed redlines.
+
+    Used for first-version contracts (no counterparty edits to verify yet), so the
+    vendor email requests the AI-recommended redlines directly from the clause analysis.
+    include='unresolved' -> only HIGH/CRITICAL clauses; include='all' -> any clause with a redline.
+    """
+    include = (include or "unresolved").lower().strip()
+    if include not in {"unresolved", "all"}:
+        include = "unresolved"
+
+    severity = {"CRITICAL": 3, "HIGH": 2, "MEDIUM": 1, "LOW": 0}
+    bullets = []
+    for c in (clauses or []):
+        risk = c.risk_level.value if hasattr(c.risk_level, "value") else (str(c.risk_level) if c.risk_level else "LOW")
+        redline = (c.redline_suggestion or "").strip()
+        if not redline and risk in {"HIGH", "CRITICAL"}:
+            redline = (_heuristic_redline(c.clause_type, c.text_content, risk) or "").strip()
+        if not redline:
+            continue
+        if include == "unresolved" and risk not in {"HIGH", "CRITICAL"}:
+            continue
+        bullets.append(
+            {
+                "clause_type": c.clause_type or "Clause",
+                "status": "Proposed",
+                "original_risk_level": risk.title(),
+                "proposed_redline": redline[:900],
+            }
+        )
+
+    bullets.sort(key=lambda b: severity.get((b["original_risk_level"] or "").upper(), 0), reverse=True)
+    lines = []
+    for b in bullets:
+        lines.append(f"- {b['clause_type']} (risk: {b['original_risk_level']})")
+        if b.get("proposed_redline"):
+            lines.append(f"  Suggested language: {b['proposed_redline']}")
+    text = "\n".join(lines) or "- (none)"
     return text, bullets
 
 
@@ -2061,15 +2107,24 @@ async def generate_vendor_redlines_email(
         resolutions = []
 
     include = (payload.include or "unresolved").lower().strip()
-    bullets_text, bullets = _format_redline_items_for_email(resolutions, include=include)
+    if resolutions:
+        bullets_text, bullets = _format_redline_items_for_email(resolutions, include=include)
+    else:
+        # First-version contract (no counterparty edits yet): request our proposed redlines.
+        clauses = db.query(ContractClause).filter(ContractClause.contract_id == contract_id).all()
+        bullets_text, bullets = _format_proposed_redlines_for_email(clauses, include=include)
 
     import openai
     client = openai.AsyncOpenAI(api_key=os.getenv("OPENAI_API_KEY"))
 
     system_prompt = (
-        "You are a senior procurement manager writing a concise email to a vendor. "
+        "You are an experienced procurement professional writing a concise email to a vendor. "
         "Your goal is to clearly request specific contract edits (redlines) without being adversarial. "
-        "Do not claim legal conclusions. Do not invent contract terms. "
+        "For each item you are given the clause and the specific suggested language we want — incorporate that "
+        "actual language so the vendor knows exactly what change is being requested. Be concrete, not generic. "
+        "Do not claim legal conclusions. Do not invent contract terms beyond what is provided. "
+        "Do NOT include a signature block: no placeholder name (e.g. '[Your Name]'), job title, company name, or "
+        "contact details. End with a simple closing such as 'Best regards,' on its own line. "
         "Output ONLY JSON with keys: subject, body."
     )
 
@@ -2084,12 +2139,13 @@ async def generate_vendor_redlines_email(
         f"Contract Version: {version_num}\n"
         f"Include: {include}\n"
         f"Tone: {tone}\n\n"
-        f"Requested items:\n{bullets_text}\n\n"
+        f"Requested items (each may include the specific suggested language to request):\n{bullets_text}\n\n"
         "Write an email that:\n"
-        "- Opens with appreciation and context\n"
-        "- Lists requested edits as bullets (group by clause type)\n"
+        "- Opens with brief appreciation and context\n"
+        "- For each item, names the clause and states the specific change we're requesting, referencing the suggested language provided above\n"
         "- Asks for confirmation and a timeline\n"
         "- Mentions we can hop on a quick call if helpful\n"
+        "- Ends with a simple closing only (e.g. 'Best regards,'); do NOT add a name, job title, or company\n"
         f"Subject should be similar to: {subject_hint}\n"
     )
 

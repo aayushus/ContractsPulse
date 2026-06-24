@@ -328,8 +328,10 @@
 
 	async function generateVendorEmail() {
 		if (!contract) return;
+		const hadDraft = !!emailDraft;
+		// Open the modal immediately so the user sees the loading state while we draft.
+		emailModalOpen = true;
 		isEmailLoading = true;
-		emailDraft = null;
 		try {
 			const res = await apiFetch(`/api/v1/contracts/${contract.id}/redlines/email`, {
 				method: 'POST',
@@ -339,9 +341,10 @@
 			const json = await res.json().catch(() => ({}));
 			if (!res.ok) throw new Error(json?.detail || 'Failed to generate email');
 			emailDraft = json.email || null;
-			emailModalOpen = true;
 		} catch (e: any) {
 			toast.error(e?.message || 'Failed to generate email');
+			// If this was the first attempt (no existing draft), don't strand the user on a skeleton.
+			if (!hadDraft) emailModalOpen = false;
 		} finally {
 			isEmailLoading = false;
 		}
@@ -847,6 +850,15 @@
 		</div>
 		<div class="cockpit-actions">
 			{#if contract.status === 'COMPLETED'}
+				<button class="btn btn-secondary btn-compact btn-ai" onclick={generateVendorEmail} disabled={isEmailLoading} title="Generate a vendor email summarizing requested redlines (AI)">
+					{#if isEmailLoading}
+						<span class="spinner spinner-sm"></span>
+						Drafting…
+					{:else}
+						<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M21.75 6.75v10.5a2.25 2.25 0 0 1-2.25 2.25h-15a2.25 2.25 0 0 1-2.25-2.25V6.75m19.5 0A2.25 2.25 0 0 0 19.5 4.5h-15a2.25 2.25 0 0 0-2.25 2.25m19.5 0v.243a2.25 2.25 0 0 1-1.07 1.916l-7.5 4.615a2.25 2.25 0 0 1-2.36 0L3.32 8.91a2.25 2.25 0 0 1-1.07-1.916V6.75"/></svg>
+						Email Vendor
+					{/if}
+				</button>
 				<button class="btn btn-primary btn-compact" onclick={() => uploadRevisionModalOpen = true} title="Upload Revision / Next Version">
 					<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="17 8 12 3 7 8"/><line x1="12" y1="3" x2="12" y2="15"/></svg>
 					Upload Revision
@@ -1483,17 +1495,6 @@
 										<span class="vstat-label">Remaining</span>
 									</div>
 								</div>
-								<div class="vh-divider"></div>
-								<button class="btn btn-email-trigger btn-ai" onclick={generateVendorEmail} disabled={isEmailLoading} title="Generate a vendor email summarizing requested redlines (AI)">
-									<svg class="email-btn-icon" width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-										<path d="M21.75 6.75v10.5a2.25 2.25 0 0 1-2.25 2.25h-15a2.25 2.25 0 0 1-2.25-2.25V6.75m19.5 0A2.25 2.25 0 0 0 19.5 4.5h-15a2.25 2.25 0 0 0-2.25 2.25m19.5 0v.243a2.25 2.25 0 0 1-1.07 1.916l-7.5 4.615a2.25 2.25 0 0 1-2.36 0L3.32 8.91a2.25 2.25 0 0 1-1.07-1.916V6.75"/>
-									</svg>
-									<span>Email Vendor</span>
-									<svg class="sparkle-stars-svg" width="13" height="13" viewBox="0 0 24 24" fill="currentColor">
-										<path d="M12 2l1.2 4.3L18 8l-4.8 1.7L12 14l-1.2-4.3L6 8l4.8-1.7L12 2z"/>
-										<path d="M20 12l0.6 2.15L23 15l-2.4 0.85L20 18l-0.6-2.15L17 15l2.4-0.85L20 12z" opacity="0.8"/>
-									</svg>
-								</button>
 							</div>
 						</div>
 
@@ -1564,8 +1565,8 @@
 			</div>
 			
 			<div class="modal-header email-composer-header">
-				<div class="modal-icon warning" style="background: rgba(var(--ai-rgb), 0.12); color: var(--ai);">
-					<svg class="ai-icon animate-pulse" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 2l1.2 4.3L18 8l-4.8 1.7L12 14l-1.2-4.3L6 8l4.8-1.7L12 2z"/></svg>
+				<div class="modal-icon warning" style="background: rgba(var(--ai-rgb), 0.12); color: var(--ai); border: none;">
+					<svg class="ai-icon animate-pulse" width="18" height="18" viewBox="0 0 24 24" fill="currentColor" stroke="none"><path d="M12 6l1.2 4.3L18 12l-4.8 1.7L12 18l-1.2-4.3L6 12l4.8-1.7L12 6z"/></svg>
 				</div>
 				<div>
 					<h3 class="font-semibold" style="margin: 0; font-size: 16px;">AI Negotiation Counsel</h3>
@@ -1579,7 +1580,7 @@
 					<div class="control-group">
 						<label for="email-tone-select">Tone</label>
 						<div class="custom-select-wrapper">
-							<select id="email-tone-select" class="custom-select" bind:value={emailTone} onchange={generateVendorEmail}>
+							<select id="email-tone-select" class="custom-select" bind:value={emailTone}>
 								<option value="professional">Professional</option>
 								<option value="friendly">Friendly</option>
 								<option value="firm">Firm</option>
@@ -1589,7 +1590,7 @@
 					<div class="control-group">
 						<label for="email-include-select">Include</label>
 						<div class="custom-select-wrapper">
-							<select id="email-include-select" class="custom-select" bind:value={emailInclude} onchange={generateVendorEmail}>
+							<select id="email-include-select" class="custom-select" bind:value={emailInclude}>
 								<option value="unresolved">Unresolved only</option>
 								<option value="all">All items</option>
 							</select>
@@ -1606,6 +1607,10 @@
 
 				{#if !emailDraft || isEmailLoading}
 					<div class="email-loading-pane bg-panel-glow">
+						<div class="email-loading-status">
+							<span class="spinner spinner-sm"></span>
+							<span class="email-loading-text">AI Counsel is drafting your vendor email…</span>
+						</div>
 						<div class="loading-envelope-headers">
 							<div class="loading-row">
 								<div class="loading-label skeleton"></div>
@@ -3278,27 +3283,6 @@
 		white-space: pre-wrap;
 	}
 
-	.email-draft {
-		border: 1px solid var(--border-subtle);
-		border-radius: 12px;
-		background: var(--bg-panel);
-		padding: 12px;
-	}
-	.email-field .email-value {
-		margin-top: 6px;
-		font-weight: 650;
-	}
-	.email-body {
-		margin: 6px 0 0 0;
-		padding: 10px 10px;
-		border: 1px solid var(--border-subtle);
-		border-radius: 10px;
-		background: var(--bg-app);
-		white-space: pre-wrap;
-		font-size: 13px;
-		line-height: 1.35;
-	}
-
 	/* Redline Cockpit Layout Tweaks */
 	.vh-right {
 		display: flex;
@@ -3310,64 +3294,6 @@
 		height: 28px;
 		background: var(--border-subtle);
 	}
-	.btn-email-trigger {
-		background: linear-gradient(135deg, rgba(var(--ai-rgb), 0.22) 0%, rgba(var(--ai-rgb), 0.08) 100%);
-		border: 1px solid rgba(var(--ai-rgb), 0.35);
-		color: var(--text-primary);
-		padding: 0 16px;
-		height: 36px;
-		font-size: 13px;
-		font-weight: 600;
-		border-radius: var(--radius-sm);
-		display: inline-flex;
-		align-items: center;
-		gap: 8px;
-		box-shadow: 0 2px 8px rgba(var(--ai-rgb), 0.08), inset 0 1px 0 rgba(255, 255, 255, 0.05);
-		transition: transform 160ms var(--ease-out), background-color 200ms var(--ease-out), border-color 200ms var(--ease-out), box-shadow 200ms var(--ease-out);
-		position: relative;
-		overflow: hidden;
-		cursor: pointer;
-	}
-	.btn-email-trigger::after {
-		content: '';
-		position: absolute;
-		top: 0;
-		left: 0;
-		width: 100%;
-		height: 100%;
-		background: linear-gradient(90deg, transparent, rgba(255, 255, 255, 0.15), transparent);
-		transform: translateX(-100%);
-	}
-	.btn-email-trigger:hover::after {
-		transform: translateX(100%);
-		transition: transform 1s var(--ease-out);
-	}
-	.btn-email-trigger:hover {
-		background: linear-gradient(135deg, rgba(var(--ai-rgb), 0.32) 0%, rgba(var(--ai-rgb), 0.14) 100%);
-		border-color: rgba(var(--ai-rgb), 0.55);
-		box-shadow: var(--ai-glow), 0 4px 16px rgba(var(--ai-rgb), 0.16);
-	}
-	.btn-email-trigger:active {
-		transform: scale(0.97) !important;
-	}
-	.email-btn-icon {
-		color: var(--ai);
-		transition: transform 200ms var(--ease-out);
-	}
-	.btn-email-trigger:hover .email-btn-icon {
-		transform: rotate(-10deg) scale(1.1);
-	}
-	.sparkle-stars-svg {
-		color: #e3b341;
-		filter: drop-shadow(0 0 6px rgba(227, 179, 65, 0.6));
-		animation: pulseSparkles 2.4s var(--ease-in-out) infinite;
-		transform-origin: center;
-	}
-	@keyframes pulseSparkles {
-		0%, 100% { transform: scale(1) rotate(0deg); opacity: 0.95; }
-		50% { transform: scale(1.2) rotate(15deg); opacity: 1; }
-	}
-
 	/* Premium Email Composer Modal override */
 	.modal-backdrop {
 		transition: background-color 280ms var(--ease-drawer), backdrop-filter 280ms var(--ease-drawer);
@@ -3560,6 +3486,21 @@
 		box-shadow: inset 0 2px 12px rgba(0, 0, 0, 0.2);
 	}
 
+	.email-loading-status {
+		display: flex;
+		align-items: center;
+		gap: 10px;
+		padding: 14px 20px;
+		border-bottom: 1px solid rgba(255, 255, 255, 0.05);
+		background: rgba(var(--ai-rgb), 0.06);
+	}
+	.email-loading-text {
+		font-size: 12.5px;
+		font-weight: 600;
+		color: var(--ai);
+		letter-spacing: 0.01em;
+	}
+
 	.loading-envelope-headers {
 		padding: 18px 20px;
 		border-bottom: 1px solid rgba(255, 255, 255, 0.05);
@@ -3692,13 +3633,13 @@
 		background-color: rgba(255, 255, 255, 0.08);
 		border-radius: 99px;
 	}
-	[data-theme="light"] .email-body-pane::-webkit-scrollbar-thumb {
+	:global([data-theme="light"]) .email-body-pane::-webkit-scrollbar-thumb {
 		background-color: rgba(0, 0, 0, 0.12);
 	}
 	.email-body-pane::-webkit-scrollbar-thumb:hover {
 		background-color: rgba(255, 255, 255, 0.16);
 	}
-	[data-theme="light"] .email-body-pane::-webkit-scrollbar-thumb:hover {
+	:global([data-theme="light"]) .email-body-pane::-webkit-scrollbar-thumb:hover {
 		background-color: rgba(0, 0, 0, 0.2);
 	}
 
@@ -3720,6 +3661,85 @@
 		justify-content: flex-end;
 		gap: 12px;
 		background: rgba(13, 17, 23, 0.15);
+	}
+
+	/* ---- Light theme adaptation for the email composer ---- */
+	:global([data-theme="light"]) .modal-content-wide.email-composer {
+		background: rgba(255, 255, 255, 0.94);
+		border: 1px solid var(--border-subtle);
+		box-shadow: 0 30px 70px rgba(0, 0, 0, 0.18), inset 0 1px 0 rgba(255, 255, 255, 0.7);
+	}
+	:global([data-theme="light"]) .email-composer-header {
+		border-bottom: 1px solid var(--border-subtle);
+	}
+	:global([data-theme="light"]) .email-composer-controls {
+		background: var(--bg-hover);
+		border: 1px solid var(--border-subtle);
+	}
+	:global([data-theme="light"]) .control-group label {
+		color: var(--text-secondary);
+	}
+	:global([data-theme="light"]) .custom-select {
+		background: #ffffff;
+		border: 1px solid var(--border-subtle);
+		color: var(--text-primary);
+	}
+	:global([data-theme="light"]) .custom-select:hover {
+		background-color: var(--bg-hover);
+		border-color: var(--border-strong);
+	}
+	:global([data-theme="light"]) .email-loading-pane {
+		background: var(--bg-hover);
+		border: 1px solid var(--border-subtle);
+		box-shadow: inset 0 2px 12px rgba(0, 0, 0, 0.05);
+	}
+	:global([data-theme="light"]) .email-loading-status,
+	:global([data-theme="light"]) .loading-envelope-headers {
+		border-bottom: 1px solid var(--border-subtle);
+	}
+	:global([data-theme="light"]) .loading-label {
+		background: rgba(0, 0, 0, 0.05);
+	}
+	:global([data-theme="light"]) .skeleton {
+		background: linear-gradient(90deg, rgba(0, 0, 0, 0.04) 25%, rgba(0, 0, 0, 0.08) 50%, rgba(0, 0, 0, 0.04) 75%);
+		background-size: 200% 100%;
+	}
+	:global([data-theme="light"]) .email-workspace {
+		background: #ffffff;
+		border: 1px solid var(--border-subtle);
+		box-shadow: inset 0 1px 4px rgba(0, 0, 0, 0.04), 0 4px 24px rgba(0, 0, 0, 0.06);
+	}
+	:global([data-theme="light"]) .email-envelope-headers {
+		background: var(--bg-app);
+		border-bottom: 1px solid var(--border-subtle);
+	}
+	:global([data-theme="light"]) .env-label {
+		color: var(--text-secondary);
+	}
+	:global([data-theme="light"]) .env-value {
+		color: var(--text-primary);
+	}
+	:global([data-theme="light"]) .subject-value {
+		color: var(--text-primary) !important;
+	}
+	:global([data-theme="light"]) .env-tag {
+		background: var(--bg-hover);
+		border: 1px solid var(--border-subtle);
+		color: var(--text-secondary);
+	}
+	:global([data-theme="light"]) .env-address {
+		color: var(--text-tertiary);
+	}
+	:global([data-theme="light"]) .email-body-pane {
+		background: #ffffff;
+		box-shadow: inset 0 1px 4px rgba(0, 0, 0, 0.03);
+	}
+	:global([data-theme="light"]) .email-body-text {
+		color: var(--text-primary);
+	}
+	:global([data-theme="light"]) .email-composer-footer {
+		border-top: 1px solid var(--border-subtle);
+		background: var(--bg-app);
 	}
 
 	.btn-copy-draft {
