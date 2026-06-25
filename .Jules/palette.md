@@ -7,3 +7,6 @@
 ## 2026-06-23 - Native Keyboard Support over Svelte-Ignore (Redline Toggle)
 **Learning:** Similar to list rows, interactive toggles (like the redline drawer toggle) built with `div`s that use `onclick` often have their accessibility warnings silenced via `svelte-ignore`. This hides the fact that they cannot be toggled via keyboard.
 **Action:** Instead of ignoring these warnings, convert the `div` into a fully accessible interactive element by adding `role="button"`, `tabindex="0"`, and an `onkeydown` handler for 'Enter' and 'Space'.
+## 2024-06-25 - Custom Tab Interfaces Accessibility
+**Learning:** Svelte applications often use custom `div` structures with inner buttons for tabbed interfaces to mimic sleek designs, rather than standard HTML structures. This natively breaks screen-reader accessibility for tab navigation.
+**Action:** Always verify custom tab navigation interfaces (e.g. `.analysis-tabs` containing `<button class="tab-btn">`) and explicitly add `role="tablist"` with an `aria-label` to the container and `role="tab"` along with a dynamically bound `aria-selected` attribute (e.g., `aria-selected={activeTab === 'x'}`) to each tab button to provide a fully accessible WAI-ARIA widget.

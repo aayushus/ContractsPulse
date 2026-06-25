@@ -931,37 +931,37 @@
 		<!-- Right Panel: AI Analysis panel -->
 		<div class="analysis-panel">
 			<!-- Sleek Tabs Navigation -->
-			<div class="analysis-tabs">
-				<button class="tab-btn" class:active={activeTab === 'overview'} onclick={() => activeTab = 'overview'}>
+			<div class="analysis-tabs" role="tablist" aria-label="Contract Analysis Tabs">
+				<button role="tab" aria-selected={activeTab === 'overview'} class="tab-btn" class:active={activeTab === 'overview'} onclick={() => activeTab = 'overview'}>
 					<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="3" width="18" height="18" rx="2"/><path d="M3 9h18M9 21V9"/></svg>
 					Overview
 				</button>
 				{#if contract.status === 'COMPLETED'}
-					<button class="tab-btn" class:active={activeTab === 'risks'} onclick={() => activeTab = 'risks'}>
+					<button role="tab" aria-selected={activeTab === 'risks'} class="tab-btn" class:active={activeTab === 'risks'} onclick={() => activeTab = 'risks'}>
 						<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"/><line x1="12" y1="9" x2="12" y2="13"/><line x1="12" y1="17" x2="12.01" y2="17"/></svg>
 						Key Risks
 					</button>
-					<button class="tab-btn" class:active={activeTab === 'clauses'} onclick={() => activeTab = 'clauses'}>
+					<button role="tab" aria-selected={activeTab === 'clauses'} class="tab-btn" class:active={activeTab === 'clauses'} onclick={() => activeTab = 'clauses'}>
 						<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="8" y1="6" x2="21" y2="6"/><line x1="8" y1="12" x2="21" y2="12"/><line x1="8" y1="18" x2="21" y2="18"/><line x1="3" y1="6" x2="3.01" y2="6"/><line x1="3" y1="12" x2="3.01" y2="12"/><line x1="3" y1="18" x2="3.01" y2="18"/></svg>
 						Smart Clauses ({clauses.length})
 					</button>
-					<button class="tab-btn" class:active={activeTab === 'chat'} onclick={() => activeTab = 'chat'}>
+					<button role="tab" aria-selected={activeTab === 'chat'} class="tab-btn" class:active={activeTab === 'chat'} onclick={() => activeTab = 'chat'}>
 						<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15a4 4 0 0 1-4 4H7l-4 4V7a4 4 0 0 1 4-4h10a4 4 0 0 1 4 4z"/></svg>
 						Ask
 					</button>
-					<button class="tab-btn" class:active={activeTab === 'obligations'} onclick={() => activeTab = 'obligations'}>
+					<button role="tab" aria-selected={activeTab === 'obligations'} class="tab-btn" class:active={activeTab === 'obligations'} onclick={() => activeTab = 'obligations'}>
 						<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M9 11l3 3L22 4"/><path d="M21 12v7a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11"/></svg>
 						Obligations
 					</button>
 					{#if contract.metadata_json?.parent_contract_id}
-						<button class="tab-btn" class:active={activeTab === 'verification'} onclick={() => activeTab = 'verification'}>
+						<button role="tab" aria-selected={activeTab === 'verification'} class="tab-btn" class:active={activeTab === 'verification'} onclick={() => activeTab = 'verification'}>
 							<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"/><polyline points="22 4 12 14.01 9 11.01"/></svg>
 							Redline Verification
 						</button>
 					{/if}
 				{/if}
 				{#if contract.status === 'PROCESSING'}
-					<button class="tab-btn" class:active={activeTab === 'trace'} onclick={() => activeTab = 'trace'}>
+					<button role="tab" aria-selected={activeTab === 'trace'} class="tab-btn" class:active={activeTab === 'trace'} onclick={() => activeTab = 'trace'}>
 						<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M22 12h-4l-3 9L9 3l-3 9H2"/></svg>
 						System Trace
 					</button>
