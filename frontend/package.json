@@ -1,43 +1,48 @@
 {
-	"name": "@contractspulse/frontend",
-	"private": true,
-	"version": "1.0.0",
-	"description": "Self-hosted AI contract intelligence platform for legal-grade risk analysis and plain-English clause warnings.",
-	"author": "Aayush Mediratta",
-	"license": "MIT",
-	"repository": {
-		"type": "git",
-		"url": "git+https://github.com/aayushus/ContractsPulse.git"
-	},
-	"keywords": [
-		"contract-analysis",
-		"legal-tech",
-		"pydantic-ai",
-		"self-hosted",
-		"homelab",
-		"sveltekit",
-		"fastapi",
-		"jwt-auth",
-		"risk-assessment",
-		"pdf-extraction"
-	],
-	"type": "module",
-	"scripts": {
-		"dev": "vite dev",
-		"build": "vite build",
-		"preview": "vite preview",
-		"prepare": "svelte-kit sync || echo ''",
-		"check": "svelte-kit sync && svelte-check --tsconfig ./tsconfig.json",
-		"check:watch": "svelte-kit sync && svelte-check --tsconfig ./tsconfig.json --watch"
-	},
-	"devDependencies": {
-		"@sveltejs/adapter-auto": "^7.0.1",
-		"@sveltejs/kit": "^2.57.0",
-		"@sveltejs/vite-plugin-svelte": "^7.0.0",
-		"@types/node": "^25.8.0",
-		"svelte": "^5.55.2",
-		"svelte-check": "^4.4.6",
-		"typescript": "^6.0.2",
-		"vite": "^8.0.7"
-	}
+  "name": "@contractspulse/frontend",
+  "private": true,
+  "version": "1.0.0",
+  "description": "Self-hosted AI contract intelligence platform for legal-grade risk analysis and plain-English clause warnings.",
+  "author": "Aayush Mediratta",
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/aayushus/ContractsPulse.git"
+  },
+  "keywords": [
+    "contract-analysis",
+    "legal-tech",
+    "pydantic-ai",
+    "self-hosted",
+    "homelab",
+    "sveltekit",
+    "fastapi",
+    "jwt-auth",
+    "risk-assessment",
+    "pdf-extraction"
+  ],
+  "type": "module",
+  "scripts": {
+    "dev": "vite dev",
+    "build": "vite build",
+    "preview": "vite preview",
+    "prepare": "svelte-kit sync || echo ''",
+    "check": "svelte-kit sync && svelte-check --tsconfig ./tsconfig.json",
+    "check:watch": "svelte-kit sync && svelte-check --tsconfig ./tsconfig.json --watch",
+    "test": "vitest run"
+  },
+  "devDependencies": {
+    "@sveltejs/adapter-auto": "^7.0.1",
+    "@sveltejs/kit": "^2.57.0",
+    "@sveltejs/vite-plugin-svelte": "^7.0.0",
+    "@testing-library/jest-dom": "^6.9.1",
+    "@testing-library/svelte": "^5.4.2",
+    "@types/node": "^25.8.0",
+    "jsdom": "^29.1.1",
+    "svelte": "^5.55.2",
+    "svelte-check": "^4.4.6",
+    "typescript": "^6.0.2",
+    "vite": "^8.0.7",
+    "vitest": "^4.1.9"
+  }
 }
