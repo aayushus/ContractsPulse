@@ -1407,7 +1407,11 @@
 								<div class="empty-tab-state">
 									<p class="text-tertiary">Obligations have not been generated for this contract yet.</p>
 									<button class="btn btn-primary margin-top-12" onclick={generateObligations} disabled={isObligationsLoading}>
-										Generate Obligations
+										{#if isObligationsLoading}
+											<span class="spinner spinner-sm"></span> Generating...
+										{:else}
+											Generate Obligations
+										{/if}
 									</button>
 								</div>
 							{/if}
