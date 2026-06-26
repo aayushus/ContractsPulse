@@ -101,6 +101,11 @@ def extract_contract_metadata(raw_text: str) -> dict:
     if company:
         # Drop obvious legal suffix noise.
         company = re.sub(r"^(the\s+)", "", company, flags=re.I).strip()
+        suffixes = r"(?:Inc|L\.?L\.?C|Corp|Corporation|Ltd|Limited|Co|Company|L\.?P|L\.?L\.?P|S\.?A|N\.?V|PTE|GMBH|AG|AB|S\.?A\.?R\.?L)"
+        stripped = re.sub(r"(?:,?\s*\b" + suffixes + r"\b\.?)+$", "", company, flags=re.I).strip()
+        stripped = re.sub(r"[,\s]+$", "", stripped)
+        if stripped:
+            company = stripped
 
     # Date: try to find an explicit date like "May 17, 2026" or "05/17/2026".
     contract_date = None
