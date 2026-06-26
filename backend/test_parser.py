@@ -5,7 +5,7 @@ import pytest
 
 sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
 
-from backend.app.parser import _slugify, compute_file_hash, normalize_contract_text, extract_contract_metadata
+from backend.app.parser import _slugify, compute_file_hash, normalize_contract_text, compute_text_hash, extract_contract_metadata
 
 def test_slugify_empty_string():
     assert _slugify("") == ""
@@ -70,6 +70,34 @@ def test_normalize_contract_text_multiple_newlines():
     assert normalize_contract_text("hello\n\nworld") == "hello\n\nworld"
     assert normalize_contract_text("hello\n\n\nworld") == "hello\n\nworld"
     assert normalize_contract_text("hello\n\n\n\nworld") == "hello\n\nworld"
+
+def test_compute_text_hash_basic():
+    text = "hello world"
+    expected_hash = "1b5e019ac95efa328c17ceaf33b02fa94b8c21e7d7ed3c33b517eefd2c62c743"
+    assert compute_text_hash(text) == expected_hash
+
+def test_compute_text_hash_empty():
+    text = ""
+    expected_hash = "1658fae457c16fc18f3f2d8e1c2a5b3e06ec32cf5d72e42e1d894f86cd996221"
+    assert compute_text_hash(text) == expected_hash
+
+    text_none = None
+    assert compute_text_hash(text_none) == expected_hash
+
+def test_compute_text_hash_normalization():
+    # Different unnormalized texts that normalize to the same string should have the same hash
+    text1 = "hello   world"
+    text2 = "hello\tworld"
+    assert compute_text_hash(text1) == compute_text_hash(text2)
+
+    text3 = "hello\r\nworld"
+    text4 = "hello\nworld"
+    assert compute_text_hash(text3) == compute_text_hash(text4)
+
+def test_compute_text_hash_different_inputs():
+    text1 = "hello world"
+    text2 = "goodbye world"
+    assert compute_text_hash(text1) != compute_text_hash(text2)
 
 
 def test_extract_contract_metadata_empty():
