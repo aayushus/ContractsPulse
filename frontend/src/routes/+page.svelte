@@ -138,6 +138,8 @@
 			.slice(0, 5);
 	});
 
+	let maxExposureScore = $derived(topExposureVectors.length > 0 ? Math.max(...topExposureVectors.map(v => v.severityScore)) : 0);
+
 	let recentCriticalTriggers = $derived.by(() => {
 		const triggers: any[] = [];
 		contracts.forEach(c => {
@@ -422,7 +424,6 @@
 
 			<div class="vector-list">
 				{#if topExposureVectors.length > 0}
-					{@const maxScore = Math.max(...topExposureVectors.map(v => v.severityScore))}
 					{#each topExposureVectors as v, i}
 						<div class="vector-item stagger-entry" style="--index: {i}">
 							<div class="vector-row">
@@ -442,7 +443,7 @@
 									class="vector-progress" 
 									class:progress-critical={v.critical > 0}
 									class:progress-high={v.critical === 0 && v.high > 0}
-									style="width: {Math.max(8, (v.severityScore / maxScore) * 100)}%"
+									style="width: {Math.max(8, (v.severityScore / maxExposureScore) * 100)}%"
 								></div>
 							</div>
 						</div>
