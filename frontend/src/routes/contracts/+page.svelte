@@ -756,7 +756,13 @@
 			</div>
 			<div class="modal-footer flex-end gap-12">
 				<button class="btn btn-secondary" onclick={() => pasteModalOpen = false}>Cancel</button>
-				<button class="btn btn-primary" onclick={handlePasteAnalyze} disabled={isUploading}>Analyze</button>
+				<button class="btn btn-primary" onclick={handlePasteAnalyze} disabled={isUploading}>
+					{#if isUploading}
+						<span class="spinner spinner-sm"></span> Analyzing...
+					{:else}
+						Analyze
+					{/if}
+				</button>
 			</div>
 		</div>
 	</div>
