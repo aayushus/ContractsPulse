@@ -332,6 +332,19 @@ async def startup_event():
     finally:
         db.close()
 
+def extract_auto_renewal_info(text: str) -> dict | None:
+    t = (text or "")
+    if not re.search(r"\b(auto[\s-]?renew|auto[\s-]?renewal|automatically renew[s]?|renewal term)\b", t, flags=re.I):
+        return None
+    days = None
+    m = re.search(r"\b(\d{1,3})\s+days?\s+(?:prior\s+to|before)\b", t, flags=re.I)
+    if m:
+        try:
+            days = int(m.group(1))
+        except Exception:
+            days = None
+    return {"opt_out_days_before_renewal": days}
+
 def save_analysis_results(db: Session, contract_id: str, analysis_results: list):
     contract = db.query(Contract).filter(Contract.id == contract_id).first()
     if not contract:
@@ -342,19 +355,6 @@ def save_analysis_results(db: Session, contract_id: str, analysis_results: list)
 
     severity = {"LOW": 0, "MEDIUM": 1, "HIGH": 2, "CRITICAL": 3}
     top_candidates = []
-
-    def extract_auto_renewal_info(text: str) -> dict | None:
-        t = (text or "")
-        if not re.search(r"\b(auto[\s-]?renew|auto[\s-]?renewal|automatically renew|renewal term)\b", t, flags=re.I):
-            return None
-        days = None
-        m = re.search(r"\b(\d{1,3})\s+days?\s+(?:prior\s+to|before)\b", t, flags=re.I)
-        if m:
-            try:
-                days = int(m.group(1))
-            except Exception:
-                days = None
-        return {"opt_out_days_before_renewal": days}
     
     for item in analysis_results:
         clause_data = item['clause']
