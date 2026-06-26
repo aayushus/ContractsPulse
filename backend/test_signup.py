@@ -65,7 +65,7 @@ def test_signup_invalid_email(mock_is_disabled, client):
 def test_signup_short_password(mock_is_disabled, client):
     response = client.post("/api/v1/auth/signup", json={"email": "test@example.com", "password": "123"})
     assert response.status_code == 400
-    assert response.json()["detail"] == "Password must be at least 4 characters long."
+    assert response.json()["detail"] == "Password must be at least 8 characters long."
 
 @patch('backend.app.main.is_signup_disabled', return_value=False)
 def test_signup_existing_user(mock_is_disabled, client, mock_db):

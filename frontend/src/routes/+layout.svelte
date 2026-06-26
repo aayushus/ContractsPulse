@@ -185,6 +185,7 @@
 						placeholder="••••••••" 
 						class="input-field" 
 						required 
+						minlength={isLogin ? undefined : 8}
 					/>
 				</div>
 				
