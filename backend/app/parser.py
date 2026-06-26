@@ -28,9 +28,11 @@ def compute_text_hash(text: str) -> str:
     norm = normalize_contract_text(text)
     return hashlib.sha256(("text:" + norm).encode("utf-8")).hexdigest()
 
-def extract_text_from_pdf(file_bytes: bytes) -> Tuple[str, str]:
+import asyncio
+
+def _extract_text_from_pdf_sync(file_bytes: bytes) -> Tuple[str, str]:
     """
-    Takes raw PDF bytes and extracts text.
+    Takes raw PDF bytes and extracts text synchronously.
     Returns a tuple of (file_hash, raw_text)
     """
     file_hash = compute_file_hash(file_bytes)
@@ -47,6 +49,15 @@ def extract_text_from_pdf(file_bytes: bytes) -> Tuple[str, str]:
     
     full_text = "\n".join(text_content)
     return file_hash, full_text
+
+async def extract_text_from_pdf(file_bytes: bytes) -> Tuple[str, str]:
+    """
+    Async wrapper around text extraction.
+    Takes raw PDF bytes and extracts text by offloading to a thread pool.
+    Returns a tuple of (file_hash, raw_text)
+    """
+    loop = asyncio.get_running_loop()
+    return await loop.run_in_executor(None, _extract_text_from_pdf_sync, file_bytes)
 
 
 def _slugify(s: str) -> str:

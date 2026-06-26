@@ -726,7 +726,7 @@ async def upload_contract(
     file_bytes = await file.read()
     
     # 2. Extract Text and Hash
-    file_hash, raw_text = extract_text_from_pdf(file_bytes)
+    file_hash, raw_text = await extract_text_from_pdf(file_bytes)
     meta = extract_contract_metadata(raw_text)
     from datetime import datetime
     upload_date = datetime.utcnow().date().isoformat()
