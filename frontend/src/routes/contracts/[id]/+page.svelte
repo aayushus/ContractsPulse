@@ -509,6 +509,19 @@
 
 	let versionChain = $derived.by(() => {
 		if (!contract || allContracts.length === 0) return [];
+
+		// Precompute maps for O(1) lookups
+		const idToContract = new Map<string, ContractDetail>();
+		const parentIdToChild = new Map<string, ContractDetail>();
+
+		for (const c of allContracts) {
+			idToContract.set(c.id, c);
+			if (c.metadata_json?.parent_contract_id) {
+				if (!parentIdToChild.has(c.metadata_json.parent_contract_id)) {
+					parentIdToChild.set(c.metadata_json.parent_contract_id, c);
+				}
+			}
+		}
 		
 		// Trace back to the root parent
 		let root: ContractDetail = contract;
@@ -516,7 +529,7 @@
 		
 		while (root.metadata_json?.parent_contract_id && !visited.has(root.id)) {
 			visited.add(root.id);
-			const parent = allContracts.find(c => c.id === root.metadata_json.parent_contract_id);
+			const parent = idToContract.get(root.metadata_json.parent_contract_id);
 			if (parent) {
 				root = parent;
 			} else {
@@ -530,12 +543,12 @@
 		visited.clear();
 		visited.add(root.id);
 		
-		let nextContract = allContracts.find(c => c.metadata_json?.parent_contract_id === currentId);
+		let nextContract = parentIdToChild.get(currentId);
 		while (nextContract && !visited.has(nextContract.id)) {
 			visited.add(nextContract.id);
 			chain.push(nextContract);
 			currentId = nextContract.id;
-			nextContract = allContracts.find(c => c.metadata_json?.parent_contract_id === currentId);
+			nextContract = parentIdToChild.get(currentId);
 		}
 		
 		return chain.map((c, index) => {
