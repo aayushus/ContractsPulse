@@ -101,12 +101,21 @@ def test_extract_contract_metadata_contract_type():
 def test_extract_contract_metadata_company():
     text = "This Agreement is made by and between Acme Corp, hereinafter referred to as 'Company', and..."
     res = extract_contract_metadata(text)
-    assert res["company"] == "Acme Corp"
+    assert res["company"] == "Acme"
 
     # Test stripping "the" prefix
     text2 = "This Agreement is made by and between The Global Entity, hereinafter referred to as 'Company', and..."
     res2 = extract_contract_metadata(text2)
     assert res2["company"] == "Global Entity"
+
+    # Test suffix stripping variations
+    text3 = "This Agreement is made by and between Acme Co., Ltd., hereinafter referred to as 'Company', and..."
+    res3 = extract_contract_metadata(text3)
+    assert res3["company"] == "Acme"
+
+    text4 = "This Agreement is made by and between Acme LLC, hereinafter referred to as 'Company', and..."
+    res4 = extract_contract_metadata(text4)
+    assert res4["company"] == "Acme"
 
 def test_extract_contract_metadata_contract_date():
     text = "Effective as of 05/17/2026, by and between..."
@@ -157,7 +166,7 @@ def test_extract_contract_metadata_full():
     """
     res = extract_contract_metadata(text)
     assert res["contract_type"] == "Non-Disclosure Agreement"
-    assert res["company"] == "Super Secret Startup Inc."
+    assert res["company"] == "Super Secret Startup"
     assert res["contract_date"] == "2025-01-01"
     assert res["contract_term"] == "term of two (2) year"
     assert res["expiry_date"] == "2027-01-01"
