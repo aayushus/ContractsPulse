@@ -220,7 +220,7 @@ def _heuristic_segment_clauses(raw_text: str) -> List[ExtractedClause]:
     text = re.sub(r"[ \t]+", " ", text)
 
     # Split on numbered section headers like "1. DUTIES." or "12) TERM".
-    # Hyphen must be first/last in a character class (or escaped) to avoid range parsing.
+    # We escape the hyphen in the character class to avoid range parsing.
     parts = re.split(r"\n(?=(?:\d+\.|\d+\))\s*[A-Z][A-Z /\-]{2,80})", text)
     chunks: List[str] = []
     for p in parts:
