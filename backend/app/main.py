@@ -1902,30 +1902,37 @@ async def compare_contract_to_template(
     # We already have clauses_with_embeddings fetched earlier at the start of the endpoint.
 
     # Pre-normalize clause embeddings outside the loop to optimize
-    normalized_clauses = []
+    clauses = []
+    ce_list = []
     for clause in clauses_with_embeddings:
         ce_np = np.array(clause.embedding)
         norm = np.linalg.norm(ce_np)
         if norm > 0:
             ce_np = ce_np / norm
-        normalized_clauses.append((clause, ce_np))
+        clauses.append(clause)
+        ce_list.append(ce_np)
 
-    for i, (para, pe) in enumerate(zip(paras, para_embeddings)):
-        # Find the closest clause in memory
+    ce_matrix = np.array(ce_list) if ce_list else np.empty((0, len(para_embeddings[0]) if para_embeddings else 0))
+
+    if clauses and para_embeddings:
+        pe_matrix = np.array(para_embeddings)
+        pe_norms = np.linalg.norm(pe_matrix, axis=1, keepdims=True)
+        pe_norms[pe_norms == 0] = 1.0
+        pe_matrix = pe_matrix / pe_norms
+
+        similarities = np.dot(pe_matrix, ce_matrix.T)
+        max_sim_indices = np.argmax(similarities, axis=1)
+    else:
+        max_sim_indices = []
+        similarities = []
+
+    for i, para in enumerate(paras):
         nearest_clause = None
-        min_dist = float("inf")
 
-        pe_np = np.array(pe)
-        norm = np.linalg.norm(pe_np)
-        if norm > 0:
-            pe_np = pe_np / norm
-
-        for clause, ce_np in normalized_clauses:
-            # np.dot(pe_np, ce_np) gets the cosine similarity because both are normalized
-            dist = 1.0 - np.dot(pe_np, ce_np)
-            if dist < min_dist:
-                min_dist = dist
-                nearest_clause = clause
+        if clauses and para_embeddings:
+            nearest_clause_idx = max_sim_indices[i]
+            nearest_clause = clauses[nearest_clause_idx]
+            # dist = 1.0 - similarities[i, nearest_clause_idx]
 
         if not nearest_clause:
             missing_sections.append({"index": i, "template_excerpt": para[:260]})
