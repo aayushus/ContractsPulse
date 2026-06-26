@@ -315,18 +315,19 @@ async def startup_event():
     # No additional columns needed - all stored in metadata_json JSONB
     pass
 
-    # Seed default user if not exists
+    # Seed default user if not exists (only if explicitly enabled)
     from sqlalchemy.orm import sessionmaker
     SessionLocal = sessionmaker(bind=engine)
     db = SessionLocal()
     try:
-        admin_exists = db.query(User).filter(User.email == "admin@admin.com").first()
-        if not admin_exists:
-            admin_hashed = get_password_hash("admin")
-            default_admin = User(email="admin@admin.com", hashed_password=admin_hashed)
-            db.add(default_admin)
-            db.commit()
-            print("Default admin user admin@admin.com created.")
+        if os.getenv("SEED_DEFAULT_ADMIN", "false").lower() == "true":
+            admin_exists = db.query(User).filter(User.email == "admin@admin.com").first()
+            if not admin_exists:
+                admin_hashed = get_password_hash("admin")
+                default_admin = User(email="admin@admin.com", hashed_password=admin_hashed)
+                db.add(default_admin)
+                db.commit()
+                print("Default admin user admin@admin.com created.")
     except Exception as e:
         print(f"Error seeding default user: {e}")
     finally:
