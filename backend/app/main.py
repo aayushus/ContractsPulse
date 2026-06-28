@@ -1310,8 +1310,8 @@ async def signup(payload: UserSignupIn, db: Session = Depends(get_db)):
     if not email_clean or "@" not in email_clean:
         raise HTTPException(status_code=400, detail="Invalid email address.")
     
-    if len(payload.password or "") < 4:
-        raise HTTPException(status_code=400, detail="Password must be at least 4 characters long.")
+    if len(payload.password or "") < 8:
+        raise HTTPException(status_code=400, detail="Password must be at least 8 characters long.")
 
     existing = db.query(User).filter(User.email == email_clean).first()
     if existing:
