@@ -1739,11 +1739,11 @@
 				<h3>Upload Revised Version</h3>
 			</div>
 			<div class="modal-body">
-				<div class="tabs-nav-modal">
-					<button class="tab-nav-modal-btn" class:active={revisionInputType === 'file'} onclick={() => { revisionInputType = 'file'; revisionFile = null; }}>
+				<div class="tabs-nav-modal" role="tablist" aria-label="Upload Method">
+					<button class="tab-nav-modal-btn" role="tab" aria-selected={revisionInputType === 'file'} class:active={revisionInputType === 'file'} onclick={() => { revisionInputType = 'file'; revisionFile = null; }}>
 						Upload Document
 					</button>
-					<button class="tab-nav-modal-btn" class:active={revisionInputType === 'text'} onclick={() => { revisionInputType = 'text'; revisionText = ''; }}>
+					<button class="tab-nav-modal-btn" role="tab" aria-selected={revisionInputType === 'text'} class:active={revisionInputType === 'text'} onclick={() => { revisionInputType = 'text'; revisionText = ''; }}>
 						Paste contract text
 					</button>
 				</div>
