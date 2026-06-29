@@ -1,4 +1,3 @@
-import pytest
 from app.main import _parse_iso_date
 from datetime import datetime
 
