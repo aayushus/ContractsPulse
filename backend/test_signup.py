@@ -51,13 +51,13 @@ def client(mock_db):
 
 @patch('backend.app.main.is_signup_disabled', return_value=True)
 def test_signup_disabled(mock_is_disabled, client):
-    response = client.post("/api/v1/auth/signup", json={"email": "test@example.com", "password": "password"})
+    response = client.post("/api/v1/auth/signup", json={"email": "test@example.com", "password": "Password123!"})
     assert response.status_code == 403
     assert response.json()["detail"] == "User registration is currently disabled."
 
 @patch('backend.app.main.is_signup_disabled', return_value=False)
 def test_signup_invalid_email(mock_is_disabled, client):
-    response = client.post("/api/v1/auth/signup", json={"email": "invalidemail", "password": "password"})
+    response = client.post("/api/v1/auth/signup", json={"email": "invalidemail", "password": "Password123!"})
     assert response.status_code == 400
     assert response.json()["detail"] == "Invalid email address."
 
@@ -68,17 +68,41 @@ def test_signup_short_password(mock_is_disabled, client):
     assert response.json()["detail"] == "Password must be at least 8 characters long."
 
 @patch('backend.app.main.is_signup_disabled', return_value=False)
+def test_signup_password_no_uppercase(mock_is_disabled, client):
+    response = client.post("/api/v1/auth/signup", json={"email": "test@example.com", "password": "password123!"})
+    assert response.status_code == 400
+    assert response.json()["detail"] == "Password must contain at least one uppercase letter."
+
+@patch('backend.app.main.is_signup_disabled', return_value=False)
+def test_signup_password_no_lowercase(mock_is_disabled, client):
+    response = client.post("/api/v1/auth/signup", json={"email": "test@example.com", "password": "PASSWORD123!"})
+    assert response.status_code == 400
+    assert response.json()["detail"] == "Password must contain at least one lowercase letter."
+
+@patch('backend.app.main.is_signup_disabled', return_value=False)
+def test_signup_password_no_number(mock_is_disabled, client):
+    response = client.post("/api/v1/auth/signup", json={"email": "test@example.com", "password": "Password!"})
+    assert response.status_code == 400
+    assert response.json()["detail"] == "Password must contain at least one number."
+
+@patch('backend.app.main.is_signup_disabled', return_value=False)
+def test_signup_password_no_special_char(mock_is_disabled, client):
+    response = client.post("/api/v1/auth/signup", json={"email": "test@example.com", "password": "Password123"})
+    assert response.status_code == 400
+    assert response.json()["detail"] == "Password must contain at least one special character."
+
+@patch('backend.app.main.is_signup_disabled', return_value=False)
 def test_signup_existing_user(mock_is_disabled, client, mock_db):
     # Setup mock DB to return an existing user
     mock_db.query.return_value.filter.return_value.first.return_value = User(email="test@example.com")
 
-    response = client.post("/api/v1/auth/signup", json={"email": "test@example.com", "password": "password"})
+    response = client.post("/api/v1/auth/signup", json={"email": "test@example.com", "password": "Password123!"})
     assert response.status_code == 400
     assert response.json()["detail"] == "A user with this email already exists."
 
 @patch('backend.app.main.is_signup_disabled', return_value=False)
 def test_signup_success(mock_is_disabled, client, mock_db):
-    response = client.post("/api/v1/auth/signup", json={"email": "test@example.com", "password": "password"})
+    response = client.post("/api/v1/auth/signup", json={"email": "test@example.com", "password": "Password123!"})
     assert response.status_code == 200
     json_data = response.json()
     assert "access_token" in json_data

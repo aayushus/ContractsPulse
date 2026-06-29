@@ -1,4 +1,4 @@
-class AuthState {
+export class AuthState {
 	token = $state<string | null>(null);
 	user = $state<{ id: string; email: string } | null>(null);
 	// Safe default: hide signup until the API confirms it's enabled.
