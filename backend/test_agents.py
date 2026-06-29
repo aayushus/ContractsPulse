@@ -1,4 +1,3 @@
-import pytest
 from backend.app.agents import _heuristic_risk
 
 def test_heuristic_risk_critical():
