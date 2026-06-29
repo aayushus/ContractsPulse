@@ -7,7 +7,6 @@ Usage:
   contractpulse feedback <job_id> <clause_id> (--not-risky | --is-risky) [--note <text>]
 """
 import os
-import sys
 import time
 from pathlib import Path
 from typing import Optional
