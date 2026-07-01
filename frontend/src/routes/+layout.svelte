@@ -141,9 +141,11 @@
 			</div>
 
 			{#if !authState.signupDisabled}
-				<div class="auth-tabs">
+				<div class="auth-tabs" role="tablist" aria-label="Authentication Mode">
 					<button 
 						type="button" 
+						role="tab"
+						aria-selected={isLogin}
 						class="auth-tab" 
 						class:active={isLogin} 
 						onclick={() => { isLogin = true; loginError = ''; }}
@@ -152,6 +154,8 @@
 					</button>
 					<button 
 						type="button" 
+						role="tab"
+						aria-selected={!isLogin}
 						class="auth-tab" 
 						class:active={!isLogin} 
 						onclick={() => { isLogin = false; loginError = ''; }}

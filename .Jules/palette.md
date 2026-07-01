@@ -1,13 +1,3 @@
-## 2026-06-20 - Native Keyboard Support over Svelte-Ignore
-**Learning:** Svelte 5's accessibility checks for `a11y_click_events_have_key_events` and `a11y_no_static_element_interactions` shouldn't just be silenced with ignore comments. The framework correctly highlights that any interactive element (like list rows or cards) handling `onclick` needs full keyboard support. Relying solely on mouse events excludes users relying on tab navigation.
-**Action:** Always complement `onclick` handlers on non-native interactive elements (like `div`s acting as cards/rows) with `role="button"`, `tabindex="0"`, and an `onkeydown` listener that triggers the identical action on 'Enter' or Space bar presses.
-## 2026-06-22 - Svelte 5 Accessibility Warnings for Event Bubbling Preventers
-**Learning:** When adding `onclick={(e) => e.stopPropagation()}` to non-interactive elements purely to prevent event bubbling, Svelte will flag strict accessibility warnings (`a11y_click_events_have_key_events`, `a11y_no_static_element_interactions`).
-**Action:** Add `role="presentation"` and an equivalent `onkeydown={(e) => e.stopPropagation()}` to explicitly define the element as presentational while satisfying the keyboard event listener requirement.
-## 2026-06-23 - Native Keyboard Support over Svelte-Ignore (Redline Toggle)
-**Learning:** Similar to list rows, interactive toggles (like the redline drawer toggle) built with `div`s that use `onclick` often have their accessibility warnings silenced via `svelte-ignore`. This hides the fact that they cannot be toggled via keyboard.
-**Action:** Instead of ignoring these warnings, convert the `div` into a fully accessible interactive element by adding `role="button"`, `tabindex="0"`, and an `onkeydown` handler for 'Enter' and 'Space'.
-## 2024-06-25 - Custom Tab Interfaces Accessibility
-**Learning:** Svelte applications often use custom `div` structures with inner buttons for tabbed interfaces to mimic sleek designs, rather than standard HTML structures. This natively breaks screen-reader accessibility for tab navigation.
-**Action:** Always verify custom tab navigation interfaces (e.g. `.analysis-tabs` containing `<button class="tab-btn">`) and explicitly add `role="tablist"` with an `aria-label` to the container and `role="tab"` along with a dynamically bound `aria-selected` attribute (e.g., `aria-selected={activeTab === 'x'}`) to each tab button to provide a fully accessible WAI-ARIA widget.
-## 2026-06-26 - Added Missing Loading States to Async Buttons\n**Learning:** Found two async buttons (Generate Obligations and Analyze) that disabled correctly but provided no visual feedback, leaving users wondering if the app was broken.\n**Action:** Applied the standard `<span class="spinner spinner-sm"></span>` pattern alongside dynamic text changes to all async buttons for better user feedback.
+## 2024-11-21 - Accessible Authentication Tabs
+**Learning:** Native `<button>` elements used as a toggle group (like Login/Signup) need explicit WAI-ARIA `role="tab"` and `role="tablist"` attributes to be properly announced by screen readers, even when styled like tabs.
+**Action:** Always ensure that visual tab interfaces use standard ARIA roles (`tablist`, `tab`, `tabpanel`) or `aria-pressed` for semantic accessibility.
