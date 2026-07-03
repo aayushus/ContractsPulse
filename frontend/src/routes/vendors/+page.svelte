@@ -73,7 +73,7 @@
 		<div class="vendors-grid">
 			{#each vendors as v (v.name)}
 				<div class="vendor-card panel">
-					<button class="vendor-head" onclick={() => (expanded[v.name] = !expanded[v.name])}>
+					<button class="vendor-head" aria-expanded={!!expanded[v.name]} onclick={() => (expanded[v.name] = !expanded[v.name])}>
 						<div class="vendor-title">
 							<div class="vendor-name">{v.name}</div>
 							<div class="vendor-sub text-tertiary">{v.contracts.length} contracts</div>
