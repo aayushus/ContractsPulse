@@ -346,6 +346,8 @@
 		}
 	}
 
+	let isDeleting = $state(false);
+
 	function promptDelete(id: string) {
 		contractToDelete = id;
 		deleteModalOpen = true;
@@ -354,8 +356,7 @@
 	async function handleDelete() {
 		if (!contractToDelete) return;
 		const contractId = contractToDelete;
-		deleteModalOpen = false;
-		contractToDelete = null;
+		isDeleting = true;
 		
 		const loadingToastId = toast.loading('Deleting contract...');
 		try {
@@ -363,6 +364,8 @@
 				method: 'DELETE'
 			});
 			if (response.ok) {
+				deleteModalOpen = false;
+				contractToDelete = null;
 				toast.dismiss(loadingToastId);
 				toast.success('Contract deleted.');
 				fetchContracts(true);
@@ -372,6 +375,8 @@
 		} catch (error) {
 			toast.dismiss(loadingToastId);
 			toast.error('Failed to delete contract.');
+		} finally {
+			isDeleting = false;
 		}
 	}
 
@@ -725,8 +730,13 @@
 				<p>Are you sure you want to completely remove this contract? This will delete all extracted clauses, AI reasoning, and traces. This action cannot be undone.</p>
 			</div>
 			<div class="modal-footer flex-end gap-12">
-				<button class="btn btn-secondary" onclick={() => deleteModalOpen = false}>Cancel</button>
-				<button class="btn btn-danger" onclick={handleDelete}>Delete Permanently</button>
+				<button class="btn btn-secondary" onclick={() => deleteModalOpen = false} disabled={isDeleting}>Cancel</button>
+				<button class="btn btn-danger" onclick={handleDelete} disabled={isDeleting}>
+					{#if isDeleting}
+						<span class="spinner spinner-sm"></span>
+					{/if}
+					Delete Permanently
+				</button>
 			</div>
 		</div>
 	</div>
