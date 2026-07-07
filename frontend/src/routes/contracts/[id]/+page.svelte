@@ -1317,10 +1317,10 @@
 									<div class="chat-empty-title">Ask anything about terms, deadlines, and risk.</div>
 									<div class="chat-empty-sub text-tertiary">Examples:</div>
 									<div class="chat-suggestions">
-										<button class="suggestion-pill" onclick={() => (chatInput = 'What are the termination notice requirements?')}>Termination notice</button>
-										<button class="suggestion-pill" onclick={() => (chatInput = 'Are there any auto-renewal terms or opt-out deadlines?')}>Auto-renewal</button>
-										<button class="suggestion-pill" onclick={() => (chatInput = 'Summarize key vendor obligations and our obligations.')}>Obligations summary</button>
-										<button class="suggestion-pill" onclick={() => (chatInput = 'What is the limitation of liability and are there any carve-outs?')}>Liability caps</button>
+										<button class="suggestion-pill" onclick={() => { chatInput = 'What are the termination notice requirements?'; sendChat(); }}>Termination notice</button>
+										<button class="suggestion-pill" onclick={() => { chatInput = 'Are there any auto-renewal terms or opt-out deadlines?'; sendChat(); }}>Auto-renewal</button>
+										<button class="suggestion-pill" onclick={() => { chatInput = 'Summarize key vendor obligations and our obligations.'; sendChat(); }}>Obligations summary</button>
+										<button class="suggestion-pill" onclick={() => { chatInput = 'What is the limitation of liability and are there any carve-outs?'; sendChat(); }}>Liability caps</button>
 									</div>
 								</div>
 							{:else}
