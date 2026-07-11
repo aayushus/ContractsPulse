@@ -263,6 +263,8 @@
 					<button 
 						type="button"
 						class="custom-select-trigger" 
+						aria-haspopup="listbox"
+						aria-expanded={!!isClauseDropdownOpen}
 						class:active={isClauseDropdownOpen}
 						onclick={(e) => { e.stopPropagation(); isClauseDropdownOpen = !isClauseDropdownOpen; isContractDropdownOpen = false; }}
 					>
@@ -296,6 +298,8 @@
 					<button 
 						type="button"
 						class="custom-select-trigger" 
+						aria-haspopup="listbox"
+						aria-expanded={!!isContractDropdownOpen}
 						class:active={isContractDropdownOpen}
 						onclick={(e) => { e.stopPropagation(); isContractDropdownOpen = !isContractDropdownOpen; isClauseDropdownOpen = false; }}
 						style="max-width: 250px;"

@@ -4,3 +4,9 @@
 ## 2024-05-19 - Suggestion Pill Auto-Submit
 **Learning:** In chat interfaces, users expect that clicking a "suggestion" or "example" prompt not only fills in the input box but also immediately triggers the submission. Previously, suggestion pills only filled the input, requiring an extra click on the "Send" button.
 **Action:** Always bind auto-submit behaviors (`sendChat()`) along with setting the input state when implementing suggestion chips.
+## 2026-07-11 - Added ARIA attributes to custom dropdown menus
+**Learning:** Custom dropdown triggers (like ) require  and a dynamic  state to properly communicate their function and state to screen readers.
+**Action:** Always include these ARIA attributes when building or modifying custom combobox or select button elements.
+## 2024-05-24 - Added ARIA attributes to custom dropdown menus
+**Learning:** Custom dropdown triggers (like `custom-select-trigger`) require `aria-haspopup="listbox"` and a dynamic `aria-expanded` state to properly communicate their function and state to screen readers.
+**Action:** Always include these ARIA attributes when building or modifying custom combobox or select button elements.
