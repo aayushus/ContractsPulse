@@ -32,6 +32,7 @@
 
 	// Modals
 	let deleteModalOpen = $state(false);
+	let isDeleting = $state(false);
 	let contractToDelete = $state<string | null>(null);
 	let pasteModalOpen = $state(false);
 	let pastedText = $state('');
@@ -354,8 +355,7 @@
 	async function handleDelete() {
 		if (!contractToDelete) return;
 		const contractId = contractToDelete;
-		deleteModalOpen = false;
-		contractToDelete = null;
+		isDeleting = true;
 		
 		const loadingToastId = toast.loading('Deleting contract...');
 		try {
@@ -372,6 +372,10 @@
 		} catch (error) {
 			toast.dismiss(loadingToastId);
 			toast.error('Failed to delete contract.');
+		} finally {
+			isDeleting = false;
+			deleteModalOpen = false;
+			contractToDelete = null;
 		}
 	}
 
@@ -726,7 +730,13 @@
 			</div>
 			<div class="modal-footer flex-end gap-12">
 				<button class="btn btn-secondary" onclick={() => deleteModalOpen = false}>Cancel</button>
-				<button class="btn btn-danger" onclick={handleDelete}>Delete Permanently</button>
+				<button class="btn btn-danger" onclick={handleDelete} disabled={isDeleting}>
+					{#if isDeleting}
+						<span class="spinner spinner-sm"></span>
+					{:else}
+						Delete Permanently
+					{/if}
+				</button>
 			</div>
 		</div>
 	</div>

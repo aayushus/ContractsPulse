@@ -77,6 +77,7 @@
 
 	// Modals
 	let deleteModalOpen = $state(false);
+	let isDeleting = $state(false);
 
 	// Version history and revision upload states
 	let allContracts = $state<ContractDetail[]>([]);
@@ -683,7 +684,7 @@
 	}
 
 	async function handleDelete() {
-		deleteModalOpen = false;
+		isDeleting = true;
 		const loadingToastId = toast.loading('Deleting contract...');
 		try {
 			const response = await apiFetch(`/api/v1/contracts/${contractId}`, {
@@ -699,6 +700,9 @@
 		} catch (error) {
 			toast.dismiss(loadingToastId);
 			toast.error('Failed to delete contract.');
+		} finally {
+			isDeleting = false;
+			deleteModalOpen = false;
 		}
 	}
 
@@ -1721,7 +1725,13 @@
 			</div>
 			<div class="modal-footer flex-end gap-12">
 				<button class="btn btn-secondary" onclick={() => deleteModalOpen = false}>Cancel</button>
-				<button class="btn btn-danger" onclick={handleDelete}>Delete Permanently</button>
+				<button class="btn btn-danger" onclick={handleDelete} disabled={isDeleting}>
+					{#if isDeleting}
+						<span class="spinner spinner-sm"></span>
+					{:else}
+						Delete Permanently
+					{/if}
+				</button>
 			</div>
 		</div>
 	</div>
