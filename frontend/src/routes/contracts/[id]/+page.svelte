@@ -1180,19 +1180,19 @@
 							</div>
 
 							<div class="filter-pills flex-row gap-6">
-								<button class="filter-pill" class:active={clauseRiskFilter === 'ALL'} onclick={() => clauseRiskFilter = 'ALL'}>
+									<button class="filter-pill" aria-pressed={clauseRiskFilter === 'ALL'} class:active={clauseRiskFilter === 'ALL'} onclick={() => clauseRiskFilter = 'ALL'}>
 									All
 								</button>
-								<button class="filter-pill filter-pill-critical" class:active={clauseRiskFilter === 'CRITICAL'} onclick={() => clauseRiskFilter = 'CRITICAL'}>
+									<button class="filter-pill filter-pill-critical" aria-pressed={clauseRiskFilter === 'CRITICAL'} class:active={clauseRiskFilter === 'CRITICAL'} onclick={() => clauseRiskFilter = 'CRITICAL'}>
 									Critical
 								</button>
-								<button class="filter-pill filter-pill-high" class:active={clauseRiskFilter === 'HIGH'} onclick={() => clauseRiskFilter = 'HIGH'}>
+									<button class="filter-pill filter-pill-high" aria-pressed={clauseRiskFilter === 'HIGH'} class:active={clauseRiskFilter === 'HIGH'} onclick={() => clauseRiskFilter = 'HIGH'}>
 									High
 								</button>
-								<button class="filter-pill filter-pill-medium" class:active={clauseRiskFilter === 'MEDIUM'} onclick={() => clauseRiskFilter = 'MEDIUM'}>
+									<button class="filter-pill filter-pill-medium" aria-pressed={clauseRiskFilter === 'MEDIUM'} class:active={clauseRiskFilter === 'MEDIUM'} onclick={() => clauseRiskFilter = 'MEDIUM'}>
 									Medium
 								</button>
-								<button class="filter-pill filter-pill-low" class:active={clauseRiskFilter === 'LOW'} onclick={() => clauseRiskFilter = 'LOW'}>
+									<button class="filter-pill filter-pill-low" aria-pressed={clauseRiskFilter === 'LOW'} class:active={clauseRiskFilter === 'LOW'} onclick={() => clauseRiskFilter = 'LOW'}>
 									Low
 								</button>
 							</div>

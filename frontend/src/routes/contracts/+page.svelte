@@ -526,10 +526,10 @@
 			<div class="filter-group flex-row gap-8">
 				<span class="filter-group-label">Status:</span>
 				<div class="filter-pills flex-row gap-4">
-					<button class="filter-pill" class:active={statusFilter === 'ALL'} onclick={() => statusFilter = 'ALL'}>All</button>
-					<button class="filter-pill" class:active={statusFilter === 'COMPLETED'} onclick={() => statusFilter = 'COMPLETED'}>Completed</button>
-					<button class="filter-pill" class:active={statusFilter === 'PROCESSING'} onclick={() => statusFilter = 'PROCESSING'}>Queue</button>
-					<button class="filter-pill" class:active={statusFilter === 'FAILED'} onclick={() => statusFilter = 'FAILED'}>Failed</button>
+					<button class="filter-pill" aria-pressed={statusFilter === 'ALL'} class:active={statusFilter === 'ALL'} onclick={() => statusFilter = 'ALL'}>All</button>
+					<button class="filter-pill" aria-pressed={statusFilter === 'COMPLETED'} class:active={statusFilter === 'COMPLETED'} onclick={() => statusFilter = 'COMPLETED'}>Completed</button>
+					<button class="filter-pill" aria-pressed={statusFilter === 'PROCESSING'} class:active={statusFilter === 'PROCESSING'} onclick={() => statusFilter = 'PROCESSING'}>Queue</button>
+					<button class="filter-pill" aria-pressed={statusFilter === 'FAILED'} class:active={statusFilter === 'FAILED'} onclick={() => statusFilter = 'FAILED'}>Failed</button>
 				</div>
 			</div>
 
@@ -537,11 +537,11 @@
 			<div class="filter-group flex-row gap-8">
 				<span class="filter-group-label">Severity:</span>
 				<div class="filter-pills flex-row gap-4">
-					<button class="filter-pill" class:active={riskFilter === 'ALL'} onclick={() => riskFilter = 'ALL'}>All</button>
-					<button class="filter-pill filter-pill-critical" class:active={riskFilter === 'CRITICAL'} onclick={() => riskFilter = 'CRITICAL'}>Critical</button>
-					<button class="filter-pill filter-pill-high" class:active={riskFilter === 'HIGH'} onclick={() => riskFilter = 'HIGH'}>High</button>
-					<button class="filter-pill filter-pill-medium" class:active={riskFilter === 'MEDIUM'} onclick={() => riskFilter = 'MEDIUM'}>Med</button>
-					<button class="filter-pill filter-pill-low" class:active={riskFilter === 'LOW'} onclick={() => riskFilter = 'LOW'}>Low</button>
+					<button class="filter-pill" aria-pressed={riskFilter === 'ALL'} class:active={riskFilter === 'ALL'} onclick={() => riskFilter = 'ALL'}>All</button>
+					<button class="filter-pill filter-pill-critical" aria-pressed={riskFilter === 'CRITICAL'} class:active={riskFilter === 'CRITICAL'} onclick={() => riskFilter = 'CRITICAL'}>Critical</button>
+					<button class="filter-pill filter-pill-high" aria-pressed={riskFilter === 'HIGH'} class:active={riskFilter === 'HIGH'} onclick={() => riskFilter = 'HIGH'}>High</button>
+					<button class="filter-pill filter-pill-medium" aria-pressed={riskFilter === 'MEDIUM'} class:active={riskFilter === 'MEDIUM'} onclick={() => riskFilter = 'MEDIUM'}>Med</button>
+					<button class="filter-pill filter-pill-low" aria-pressed={riskFilter === 'LOW'} class:active={riskFilter === 'LOW'} onclick={() => riskFilter = 'LOW'}>Low</button>
 				</div>
 			</div>
 		</div>

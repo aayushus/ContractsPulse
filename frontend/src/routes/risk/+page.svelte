@@ -243,13 +243,13 @@
 			</div>
 
 			<div class="severity-pills flex-row gap-6">
-				<button type="button" class="filter-pill" class:active={severityFilter === 'ALL'} onclick={() => severityFilter = 'ALL'}>
+				<button type="button" class="filter-pill" aria-pressed={severityFilter === 'ALL'} class:active={severityFilter === 'ALL'} onclick={() => severityFilter = 'ALL'}>
 					All Severe ({totalRisksCount})
 				</button>
-				<button type="button" class="filter-pill filter-pill-critical" class:active={severityFilter === 'CRITICAL'} onclick={() => severityFilter = 'CRITICAL'}>
+				<button type="button" class="filter-pill filter-pill-critical" aria-pressed={severityFilter === 'CRITICAL'} class:active={severityFilter === 'CRITICAL'} onclick={() => severityFilter = 'CRITICAL'}>
 					Critical ({criticalCount})
 				</button>
-				<button type="button" class="filter-pill filter-pill-high" class:active={severityFilter === 'HIGH'} onclick={() => severityFilter = 'HIGH'}>
+				<button type="button" class="filter-pill filter-pill-high" aria-pressed={severityFilter === 'HIGH'} class:active={severityFilter === 'HIGH'} onclick={() => severityFilter = 'HIGH'}>
 					High ({highCount})
 				</button>
 			</div>
