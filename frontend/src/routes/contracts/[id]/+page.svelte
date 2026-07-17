@@ -840,7 +840,7 @@
 			<a href="/contracts" class="crumb crumb-link">Contract Repository</a>
 			<span class="separator">›</span>
 			<div class="version-select-container">
-				<button class="crumb active version-dropdown-trigger" onclick={() => versionDropdownOpen = !versionDropdownOpen} aria-expanded={versionDropdownOpen}>
+				<button class="crumb active version-dropdown-trigger" onclick={() => versionDropdownOpen = !versionDropdownOpen} aria-expanded={versionDropdownOpen} aria-haspopup="listbox">
 					<span>{formatDocumentName(contract.filename)}</span>
 					{#if versionChain.length > 1}
 						<span class="version-badge">v{contract.metadata_json?.version_number || 1}</span>

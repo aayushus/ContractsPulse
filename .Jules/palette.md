@@ -13,3 +13,6 @@
 ## 2024-07-28 - [ARIA Pressed on Filter Pills]
 **Learning:** Custom UI filter groups (like `filter-pill`s) acting as mutually exclusive toggles or tabs must include `aria-pressed={state === 'VALUE'}` attributes. Relying solely on CSS `.active` classes leaves screen reader users completely unaware of which filter is currently active.
 **Action:** Always verify that custom segment controls and filter pills contain dynamically bound ARIA attributes (e.g. `aria-pressed` or `aria-selected`) mirroring their visual active state.
+## 2026-07-16 - Custom Dropdown Popup
+**Learning:** Screen readers require knowledge of what type of popup an element spawns. When making a custom dropdown trigger button, simply having `aria-expanded` is not enough; it must explicitly state `aria-haspopup="listbox"`.
+**Action:** Always include `aria-haspopup="listbox"` (or appropriate role) on elements functioning as custom select triggers to satisfy accessibility standards.
