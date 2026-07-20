@@ -1372,7 +1372,7 @@
 								{#if isChatLoading}
 									<span class="spinner spinner-sm"></span>
 								{:else}
-									<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M22 2L11 13"/><path d="M22 2l-7 20-4-9-9-4z"/></svg>
+									<svg aria-hidden="true" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M22 2L11 13"/><path d="M22 2l-7 20-4-9-9-4z"/></svg>
 								{/if}
 							</button>
 						</div>
@@ -1779,7 +1779,7 @@
 								<span>{revisionFile.name} ({(revisionFile.size / 1024).toFixed(0)} KB)</span>
 							</div>
 							<button class="btn-remove-file" onclick={() => revisionFile = null} aria-label="Remove selected file" title="Remove file">
-								<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
+								<svg aria-hidden="true" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
 							</button>
 						</div>
 					{/if}
