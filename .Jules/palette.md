@@ -16,3 +16,6 @@
 ## 2026-07-16 - Custom Dropdown Popup
 **Learning:** Screen readers require knowledge of what type of popup an element spawns. When making a custom dropdown trigger button, simply having `aria-expanded` is not enough; it must explicitly state `aria-haspopup="listbox"`.
 **Action:** Always include `aria-haspopup="listbox"` (or appropriate role) on elements functioning as custom select triggers to satisfy accessibility standards.
+## 2026-07-22 - Stateful Widget Toggles
+**Learning:** When implementing stateful widgets (like chat sidebars or modals) controlled by an icon-only button (FAB), it's critical that the button's `aria-label`, `title`, and visual icon dynamically change to reflect the next possible action (e.g. "Open" vs "Close"), rather than remaining static. Static labels confuse screen reader users and mouse users who rely on tooltips, while static icons fail to afford the dismiss action.
+**Action:** Always bind `aria-label`, `title`, and the SVG icon to the widget's open/close state, include `aria-expanded`, and hide inner SVGs with `aria-hidden="true"`.
