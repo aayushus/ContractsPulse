@@ -288,8 +288,19 @@
 	{/if}
 
 	<!-- Bottom-left assistant -->
-	<button class="assistant-fab" type="button" onclick={() => (assistantOpen = !assistantOpen)} aria-label="Open assistant">
-		<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15a4 4 0 0 1-4 4H7l-4 4V7a4 4 0 0 1 4-4h10a4 4 0 0 1 4 4z"/></svg>
+	<button
+		class="assistant-fab"
+		type="button"
+		onclick={() => (assistantOpen = !assistantOpen)}
+		aria-label={assistantOpen ? 'Close assistant' : 'Open assistant'}
+		aria-expanded={assistantOpen}
+		title={assistantOpen ? 'Close assistant' : 'Open assistant'}
+	>
+		{#if assistantOpen}
+			<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
+		{:else}
+			<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="M21 15a4 4 0 0 1-4 4H7l-4 4V7a4 4 0 0 1 4-4h10a4 4 0 0 1 4 4z"/></svg>
+		{/if}
 	</button>
 
 	{#if assistantOpen}
