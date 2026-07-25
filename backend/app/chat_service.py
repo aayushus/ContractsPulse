@@ -18,14 +18,17 @@ async def generate_chat_response(
     history: list[dict],
     db: Session,
 ):
-    # Fetch all clauses for this contract
-    clauses = db.query(ContractClause).filter(ContractClause.contract_id == contract.id).all()
-
     # Prefer semantic retrieval using pgvector embeddings stored on ContractClause.
     # If embeddings are empty, fall back to keyword overlapping, and finally raw_text.
     top_clauses: list[ContractClause] = []
+    clauses: list[ContractClause] = []
 
-    has_embeddings = any(getattr(c, "embedding", None) is not None for c in clauses)
+    # Check if any embeddings exist for this contract's clauses using an optimized query
+    has_embeddings_query = db.query(ContractClause).filter(
+        ContractClause.contract_id == contract.id,
+        ContractClause.embedding.isnot(None)
+    ).first()
+    has_embeddings = has_embeddings_query is not None
 
     client = openai.AsyncOpenAI(api_key=os.getenv("OPENAI_API_KEY"))
 
@@ -47,6 +50,10 @@ async def generate_chat_response(
         except Exception as e:
             print(f"Semantic search failed, falling back: {e}")
             has_embeddings = False
+
+    # If semantic search fails or isn't available, we need all clauses to do keyword overlap
+    if not has_embeddings:
+        clauses = db.query(ContractClause).filter(ContractClause.contract_id == contract.id).all()
 
     if not has_embeddings and clauses:
         # Degrade to simple keyword overlap if no embeddings or pgvector query fails.
