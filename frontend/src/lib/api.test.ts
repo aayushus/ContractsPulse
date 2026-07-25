@@ -1,5 +1,6 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
-import { getApiBase } from './api';
+import { getApiBase, apiFetch } from './api';
+import { authState } from './auth.svelte';
 
 describe('getApiBase', () => {
 	const originalWindow = global.window;
@@ -54,5 +55,68 @@ describe('getApiBase', () => {
 		});
 
 		expect(getApiBase()).toBe('http://192.168.1.10:8080');
+	});
+});
+
+describe('apiFetch', () => {
+	const originalFetch = global.fetch;
+	const originalWindow = global.window;
+
+	beforeEach(() => {
+		global.fetch = vi.fn();
+		// Set up window to get a predictable getApiBase() result
+		global.window = Object.create(window);
+		Object.defineProperty(window, 'location', {
+			value: { href: 'http://localhost:5173' },
+			writable: true
+		});
+	});
+
+	afterEach(() => {
+		global.fetch = originalFetch;
+		if (originalWindow === undefined) {
+			// @ts-ignore
+			delete global.window;
+		} else {
+			global.window = originalWindow;
+		}
+		vi.restoreAllMocks();
+		authState.setToken(null);
+	});
+
+	it('should set Authorization header when token is present', async () => {
+		authState.setToken('test-token');
+		const mockResponse = new Response(null, { status: 200 });
+		(global.fetch as ReturnType<typeof vi.fn>).mockResolvedValue(mockResponse);
+
+		await apiFetch('/test-path');
+
+		expect(global.fetch).toHaveBeenCalledWith('http://localhost:9432/test-path', expect.objectContaining({
+			headers: expect.any(Headers)
+		}));
+
+		const callArgs = (global.fetch as ReturnType<typeof vi.fn>).mock.calls[0];
+		const headers = callArgs[1].headers as Headers;
+		expect(headers.get('Authorization')).toBe('Bearer test-token');
+	});
+
+	it('should call authState.logout() when response status is 401', async () => {
+		const logoutSpy = vi.spyOn(authState, 'logout');
+		const mockResponse = new Response(null, { status: 401 });
+		(global.fetch as ReturnType<typeof vi.fn>).mockResolvedValue(mockResponse);
+
+		await apiFetch('/test-path');
+
+		expect(logoutSpy).toHaveBeenCalledTimes(1);
+	});
+
+	it('should not call authState.logout() when response status is not 401', async () => {
+		const logoutSpy = vi.spyOn(authState, 'logout');
+		const mockResponse = new Response(null, { status: 200 });
+		(global.fetch as ReturnType<typeof vi.fn>).mockResolvedValue(mockResponse);
+
+		await apiFetch('/test-path');
+
+		expect(logoutSpy).not.toHaveBeenCalled();
 	});
 });
