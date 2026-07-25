@@ -18,3 +18,7 @@ def test_verify_password_malformed_hash():
     password = "secure_password123"
     malformed_hash = "not_a_valid_bcrypt_hash"
     assert verify_password(password, malformed_hash) is False, "Expected False for malformed hash"
+
+def test_verify_password_exception():
+    """Test that verify_password handles exceptions and returns False."""
+    assert verify_password("plain", "invalid_hash_string") is False, "Expected False when an exception occurs during password verification"
