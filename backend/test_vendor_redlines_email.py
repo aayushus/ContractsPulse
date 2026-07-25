@@ -269,4 +269,4 @@ def test_complete_failure(override_deps, mock_user):
         )
 
         assert response.status_code == 500
-        assert "Email generation failed: Second call failed" in response.json()["detail"]
+        assert "An internal error occurred" in response.json()["detail"]

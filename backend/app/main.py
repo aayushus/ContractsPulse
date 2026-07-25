@@ -1,8 +1,11 @@
 import os
+import logging
 import bcrypt
 import jwt
 import re
 from datetime import datetime, timedelta, timezone
+logger = logging.getLogger(__name__)
+
 from fastapi import FastAPI, UploadFile, File, BackgroundTasks, HTTPException, Depends, Header
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
@@ -1678,7 +1681,8 @@ async def clause_repository_search(
         emb = await client.embeddings.create(model="text-embedding-3-small", input=q)
         q_embedding = emb.data[0].embedding
     except Exception as e:
-        raise HTTPException(status_code=500, detail=f"Embedding failed: {str(e)}")
+        logger.error(f"Embedding failed: {str(e)}", exc_info=True)
+        raise HTTPException(status_code=500, detail="An internal error occurred")
 
     try:
         rows = (
@@ -1690,7 +1694,8 @@ async def clause_repository_search(
             .all()
         )
     except Exception as e:
-        raise HTTPException(status_code=500, detail=f"Vector search failed: {str(e)}")
+        logger.error(f"Vector search failed: {str(e)}", exc_info=True)
+        raise HTTPException(status_code=500, detail="An internal error occurred")
 
     results = []
     analytics = {"by_clause_type": {}, "by_risk_level": {}}
@@ -1739,7 +1744,8 @@ async def assistant_chat(
         emb = await client.embeddings.create(model="text-embedding-3-small", input=question)
         q_embedding = emb.data[0].embedding
     except Exception as e:
-        raise HTTPException(status_code=500, detail=f"Embedding failed: {str(e)}")
+        logger.error(f"Embedding failed: {str(e)}", exc_info=True)
+        raise HTTPException(status_code=500, detail="An internal error occurred")
 
     matches = (
         db.query(ContractClause, Contract)
@@ -1801,7 +1807,8 @@ async def assistant_chat(
             )
         answer = resp.choices[0].message.content or ""
     except Exception as e:
-        raise HTTPException(status_code=500, detail=f"Assistant chat failed: {str(e)}")
+        logger.error(f"Assistant chat failed: {str(e)}", exc_info=True)
+        raise HTTPException(status_code=500, detail="An internal error occurred")
 
     return {"answer": answer, "sources": sources}
 
@@ -1903,7 +1910,8 @@ async def compare_contract_to_template(
         emb = await client.embeddings.create(model="text-embedding-3-small", input=paras)
         para_embeddings = [d.embedding for d in emb.data]
     except Exception as e:
-        raise HTTPException(status_code=500, detail=f"Embedding failed: {str(e)}")
+        logger.error(f"Embedding failed: {str(e)}", exc_info=True)
+        raise HTTPException(status_code=500, detail="An internal error occurred")
 
     missing_sections = []
 
@@ -2186,7 +2194,8 @@ async def generate_vendor_redlines_email(
         import json
         draft = json.loads(content)
     except Exception as e:
-        raise HTTPException(status_code=500, detail=f"Email generation failed: {str(e)}")
+        logger.error(f"Email generation failed: {str(e)}", exc_info=True)
+        raise HTTPException(status_code=500, detail="An internal error occurred")
 
     subject = (draft.get("subject") or subject_hint).strip()
     body = (draft.get("body") or "").strip()
