@@ -40,10 +40,7 @@ def _extract_text_from_pdf_sync(file_bytes: bytes) -> Tuple[str, str]:
     # Open the PDF directly from memory
     doc = fitz.open(stream=file_bytes, filetype="pdf")
     
-    text_content = []
-    for page_num in range(len(doc)):
-        page = doc.load_page(page_num)
-        text_content.append(page.get_text("text"))
+    text_content = [doc.load_page(i).get_text("text") for i in range(len(doc))]
         
     doc.close()
     
