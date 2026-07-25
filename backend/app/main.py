@@ -1187,14 +1187,17 @@ async def get_contract_report(
 
     clauses = (
         db.query(ContractClause)
-        .filter(ContractClause.contract_id == contract_id)
+        .filter(
+            ContractClause.contract_id == contract_id,
+            ContractClause.risk_level.in_([RiskLevel.HIGH, RiskLevel.CRITICAL])
+        )
         .all()
     )
 
     severity_order = {"CRITICAL": 0, "HIGH": 1, "MEDIUM": 2, "LOW": 3}
     flagged = sorted(
-        [c for c in clauses if c.risk_level and c.risk_level.value in {"HIGH", "CRITICAL"}],
-        key=lambda c: severity_order.get(c.risk_level.value, 9),
+        clauses,
+        key=lambda c: severity_order.get(c.risk_level.value if c.risk_level else "LOW", 9),
     )
 
     def _resolve_redline(c: ContractClause) -> str | None:
