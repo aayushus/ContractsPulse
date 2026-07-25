@@ -1,4 +1,5 @@
 import os
+import functools
 from pydantic import BaseModel, Field
 from typing import List
 from pydantic_ai import Agent
@@ -262,6 +263,7 @@ def _first_sentence(text: str) -> str:
     return t[:220].rstrip(" ,;:-") + ("" if len(t) <= 220 else ".")
 
 
+@functools.lru_cache(maxsize=1024)
 def _heuristic_redline(clause_type: str, clause_text: str, risk_level: str) -> str | None:
     """
     Deterministic redline suggestions for common risky clause patterns.
