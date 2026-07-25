@@ -4,8 +4,8 @@ from sqlalchemy import event
 from sqlalchemy.orm import sessionmaker, declarative_base
 from pgvector.psycopg2 import register_vector
 
-# The docker-compose URL is postgresql://postgres:postgres@db:5432/contractspulse
-DATABASE_URL = os.getenv("DATABASE_URL", "postgresql://postgres:postgres@localhost:5432/contractspulse")
+# The docker-compose URL is postgresql://user:password@db:5432/contractspulse
+DATABASE_URL = os.getenv("DATABASE_URL", "postgresql://user:password@localhost:5432/dbname")
 
 engine = create_engine(DATABASE_URL)
 
