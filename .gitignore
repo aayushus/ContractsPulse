@@ -21,3 +21,4 @@ backend/.pytest_cache/
 # Logs
 *.log
 venv/
+test_venv/
