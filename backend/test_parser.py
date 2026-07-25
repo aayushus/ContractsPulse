@@ -158,6 +158,15 @@ def test_extract_contract_metadata_contract_date():
     res3 = extract_contract_metadata(text3)
     assert res3["contract_date"] == "2026-05-17"
 
+def test_extract_contract_metadata_invalid_contract_date():
+    text = "Effective as of 02/30/2026, by and between..."
+    res = extract_contract_metadata(text)
+    assert res["contract_date"] is None
+
+    text2 = "This Agreement is dated February 30, 2026..."
+    res2 = extract_contract_metadata(text2)
+    assert res2["contract_date"] is None
+
 def test_extract_contract_metadata_expiry_date():
     text = "This Agreement shall expire on October 31, 2028."
     res = extract_contract_metadata(text)
@@ -166,6 +175,15 @@ def test_extract_contract_metadata_expiry_date():
     text2 = "expiration date: 12/31/2029"
     res2 = extract_contract_metadata(text2)
     assert res2["expiry_date"] == "2029-12-31"
+
+def test_extract_contract_metadata_invalid_expiry_date():
+    text = "This Agreement shall expire on February 30, 2028."
+    res = extract_contract_metadata(text)
+    assert res["expiry_date"] is None
+
+    text2 = "expiration date: 14/31/2029"
+    res2 = extract_contract_metadata(text2)
+    assert res2["expiry_date"] is None
 
 def test_extract_contract_metadata_renewal_notice_days():
     text = "Either party may terminate this agreement by providing 60 days prior to renewal."
