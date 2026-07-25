@@ -22,6 +22,8 @@ if not JWT_SECRET:
     raise ValueError("JWT_SECRET environment variable must be set for security reasons.")
 JWT_ALGORITHM = "HS256"
 ACCESS_TOKEN_EXPIRE_MINUTES = 60 * 24 * 7 # 1 week
+
+RISK_SEVERITY_MAP = {"CRITICAL": 3, "HIGH": 2, "MEDIUM": 1, "LOW": 0}
 def is_signup_disabled() -> bool:
     # Read dynamically so docker `.env` changes take effect after container restart,
     # and so `uvicorn --reload` doesn't accidentally keep stale module-level state.
@@ -353,7 +355,6 @@ def save_analysis_results(db: Session, contract_id: str, analysis_results: list)
     # Track overall risk for metadata
     risk_counts = {"LOW": 0, "MEDIUM": 0, "HIGH": 0, "CRITICAL": 0}
 
-    severity = {"LOW": 0, "MEDIUM": 1, "HIGH": 2, "CRITICAL": 3}
     top_candidates = []
     
     for item in analysis_results:
@@ -420,7 +421,7 @@ def save_analysis_results(db: Session, contract_id: str, analysis_results: list)
         })
 
     contract.status = ContractStatus.COMPLETED
-    top_candidates.sort(key=lambda x: (severity.get(x["risk_level"], 0), len(x.get("risk_reasoning") or "")), reverse=True)
+    top_candidates.sort(key=lambda x: (RISK_SEVERITY_MAP.get(x["risk_level"], 0), len(x.get("risk_reasoning") or "")), reverse=True)
     top_risks = top_candidates[:3]
     existing = contract.metadata_json or {}
     contract.metadata_json = {**existing, "risk_counts": risk_counts, "top_risks": top_risks}
@@ -1603,7 +1604,6 @@ async def get_vendors(
     )
 
     vendor_map: dict = {}
-    severity = {"LOW": 0, "MEDIUM": 1, "HIGH": 2, "CRITICAL": 3}
 
     for c in contracts:
         meta = c.metadata_json or {}
@@ -1641,13 +1641,13 @@ async def get_vendors(
         vendor_map[vendor_name]["total_critical"] += risk_counts.get("CRITICAL", 0)
         vendor_map[vendor_name]["total_high"] += risk_counts.get("HIGH", 0)
 
-        if severity.get(overall_risk, 0) > severity.get(vendor_map[vendor_name]["worst_risk"], 0):
+        if RISK_SEVERITY_MAP.get(overall_risk, 0) > RISK_SEVERITY_MAP.get(vendor_map[vendor_name]["worst_risk"], 0):
             if c.status.value == "COMPLETED":
                 vendor_map[vendor_name]["worst_risk"] = overall_risk
 
     # Sort vendors: most risky first, then by contract count
     vendors = list(vendor_map.values())
-    vendors.sort(key=lambda v: (-severity.get(v["worst_risk"], 0), -len(v["contracts"])))
+    vendors.sort(key=lambda v: (-RISK_SEVERITY_MAP.get(v["worst_risk"], 0), -len(v["contracts"])))
 
     return {"vendors": vendors}
 
@@ -2071,7 +2071,6 @@ def _format_proposed_redlines_for_email(clauses: list, include: str) -> tuple[st
     if include not in {"unresolved", "all"}:
         include = "unresolved"
 
-    severity = {"CRITICAL": 3, "HIGH": 2, "MEDIUM": 1, "LOW": 0}
     bullets = []
     for c in (clauses or []):
         risk = c.risk_level.value if hasattr(c.risk_level, "value") else (str(c.risk_level) if c.risk_level else "LOW")
@@ -2091,7 +2090,7 @@ def _format_proposed_redlines_for_email(clauses: list, include: str) -> tuple[st
             }
         )
 
-    bullets.sort(key=lambda b: severity.get((b["original_risk_level"] or "").upper(), 0), reverse=True)
+    bullets.sort(key=lambda b: RISK_SEVERITY_MAP.get((b["original_risk_level"] or "").upper(), 0), reverse=True)
     lines = []
     for b in bullets:
         lines.append(f"- {b['clause_type']} (risk: {b['original_risk_level']})")
