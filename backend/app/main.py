@@ -1911,17 +1911,14 @@ async def compare_contract_to_template(
     # We already have clauses_with_embeddings fetched earlier at the start of the endpoint.
 
     # Pre-normalize clause embeddings outside the loop to optimize
-    clauses = []
-    ce_list = []
-    for clause in clauses_with_embeddings:
-        ce_np = np.array(clause.embedding)
-        norm = np.linalg.norm(ce_np)
-        if norm > 0:
-            ce_np = ce_np / norm
-        clauses.append(clause)
-        ce_list.append(ce_np)
-
-    ce_matrix = np.array(ce_list) if ce_list else np.empty((0, len(para_embeddings[0]) if para_embeddings else 0))
+    clauses = list(clauses_with_embeddings)
+    if clauses:
+        ce_matrix = np.array([clause.embedding for clause in clauses])
+        ce_norms = np.linalg.norm(ce_matrix, axis=1, keepdims=True)
+        ce_norms[ce_norms == 0] = 1.0
+        ce_matrix = ce_matrix / ce_norms
+    else:
+        ce_matrix = np.empty((0, len(para_embeddings[0]) if para_embeddings else 0))
 
     if clauses and para_embeddings:
         pe_matrix = np.array(para_embeddings)
