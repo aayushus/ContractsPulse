@@ -88,12 +88,11 @@ async def generate_chat_response(
     )
 
     # Build conversation history for multi-turn
-    history_messages = []
-    for h in (history or [])[-6:]:  # last 6 turns max
-        role = h.get("role", "user")
-        content = h.get("content", "")
-        if role in {"user", "assistant"} and content:
-            history_messages.append({"role": role, "content": content})
+    history_messages = [
+        {"role": r, "content": c}
+        for h in (history or [])[-6:]
+        if (r := h.get("role", "user")) in {"user", "assistant"} and (c := h.get("content", ""))
+    ]
 
     system_prompt = (
         "You are a senior procurement legal assistant embedded in ContractsPulse. "
