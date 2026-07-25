@@ -1878,8 +1878,11 @@ async def compare_contract_to_template(
     if not template:
         raise HTTPException(status_code=404, detail="Template not found")
 
-    clauses = db.query(ContractClause).filter(ContractClause.contract_id == contract_id).all()
-    clauses_with_embeddings = [c for c in clauses if getattr(c, "embedding", None) is not None]
+    clauses_with_embeddings = (
+        db.query(ContractClause)
+        .filter(ContractClause.contract_id == contract_id, ContractClause.embedding.isnot(None))
+        .all()
+    )
 
     # Chunk template into paragraphs for lightweight coverage check
     paras = [p.strip() for p in re.split(r"\n{2,}", template.raw_text) if p.strip()]
