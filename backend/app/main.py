@@ -1043,6 +1043,8 @@ async def list_contracts(
     return {"contracts": result}
 
 
+_SEVERITY_ORDER = {"CRITICAL": 0, "HIGH": 1}
+
 @app.get("/api/v1/risks")
 async def list_all_risks(
     db: Session = Depends(get_db),
@@ -1073,10 +1075,9 @@ async def list_all_risks(
     )
     
     # Sort clauses: CRITICAL first, then HIGH
-    severity_order = {"CRITICAL": 0, "HIGH": 1}
     clauses = sorted(
         clauses,
-        key=lambda c: severity_order.get(c.risk_level.value if c.risk_level else "HIGH", 9)
+        key=lambda c: _SEVERITY_ORDER.get(c.risk_level.value if c.risk_level else "HIGH", 9)
     )
     
     result = []
