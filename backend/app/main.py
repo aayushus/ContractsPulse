@@ -471,14 +471,18 @@ async def _generate_clause_embeddings(db, contract, contract_id: str):
         if clauses:
             texts = [c.text_content for c in clauses]
             import openai
+            import asyncio
             client = openai.AsyncOpenAI(api_key=os.getenv("OPENAI_API_KEY"))
+
+            chunks = [texts[i:i+100] for i in range(0, len(texts), 100)]
+            tasks = [
+                client.embeddings.create(model="text-embedding-3-small", input=chunk)
+                for chunk in chunks
+            ]
+            responses = await asyncio.gather(*tasks)
+
             embeddings = []
-            for i in range(0, len(texts), 100):
-                chunk = texts[i:i+100]
-                res = await client.embeddings.create(
-                    model="text-embedding-3-small",
-                    input=chunk
-                )
+            for res in responses:
                 embeddings.extend([item.embedding for item in res.data])
 
             if len(embeddings) == len(clauses):
