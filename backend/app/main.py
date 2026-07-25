@@ -1693,13 +1693,21 @@ async def clause_repository_search(
         raise HTTPException(status_code=500, detail=f"Vector search failed: {str(e)}")
 
     results = []
+
     analytics = {"by_clause_type": {}, "by_risk_level": {}}
+    by_clause_type = analytics["by_clause_type"]
+    by_risk_level = analytics["by_risk_level"]
+
+    append = results.append
+
     for clause, contract in rows:
         risk = clause.risk_level.value if clause.risk_level else "LOW"
         ctype = (clause.clause_type or "Unknown").strip()
-        analytics["by_clause_type"][ctype] = analytics["by_clause_type"].get(ctype, 0) + 1
-        analytics["by_risk_level"][risk] = analytics["by_risk_level"].get(risk, 0) + 1
-        results.append(
+
+        by_clause_type[ctype] = by_clause_type.get(ctype, 0) + 1
+        by_risk_level[risk] = by_risk_level.get(risk, 0) + 1
+
+        append(
             {
                 "contract_id": str(contract.id),
                 "contract_filename": contract.filename,
