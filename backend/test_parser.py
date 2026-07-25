@@ -8,8 +8,10 @@ from backend.app.parser import _slugify, compute_file_hash, normalize_contract_t
 
 def test_slugify_empty_string():
     assert _slugify("") == ""
-    assert _slugify(None) == ""
     assert _slugify("   ") == ""
+
+def test_slugify_none_input():
+    assert _slugify(None) == ""
 
 def test_slugify_normal_string():
     assert _slugify("hello") == "hello"
