@@ -340,6 +340,13 @@
 			<svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" class="empty-icon"><path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"/><polyline points="22 4 12 14.01 9 11.01"/></svg>
 			<h3>Risk Inbox Clean</h3>
 			<p class="text-secondary">No severe contract vulnerabilities match your active filter settings.</p>
+			{#if totalRisksCount > 0}
+				<div style="margin-top: 16px;">
+					<button class="btn btn-secondary" onclick={() => { searchQuery = ''; severityFilter = 'ALL'; clauseTypeFilter = 'ALL'; contractFilter = 'ALL'; }}>
+						Clear Filters
+					</button>
+				</div>
+			{/if}
 		</div>
 	{:else}
 		<div class="inbox-count text-tertiary">{filteredRisks.length} {filteredRisks.length === 1 ? 'finding' : 'findings'}</div>
