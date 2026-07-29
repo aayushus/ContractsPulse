@@ -19,3 +19,6 @@
 ## 2026-07-22 - Stateful Widget Toggles
 **Learning:** When implementing stateful widgets (like chat sidebars or modals) controlled by an icon-only button (FAB), it's critical that the button's `aria-label`, `title`, and visual icon dynamically change to reflect the next possible action (e.g. "Open" vs "Close"), rather than remaining static. Static labels confuse screen reader users and mouse users who rely on tooltips, while static icons fail to afford the dismiss action.
 **Action:** Always bind `aria-label`, `title`, and the SVG icon to the widget's open/close state, include `aria-expanded`, and hide inner SVGs with `aria-hidden="true"`.
+## 2024-07-29 - Added keyboard shortcut hints to Chat Send Buttons
+**Learning:** The chat interfaces have an Enter-to-send keyboard shortcut implemented via `onkeydown`, but this was completely invisible to users. Also, the SVG icons inside these icon-only buttons lacked `aria-hidden="true"`, causing screen readers to potentially announce them redundantly.
+**Action:** Whenever implementing a keyboard shortcut (like Enter to submit), expose it visually via a `title` attribute or tooltip on the corresponding button. Always pair `aria-label` on icon buttons with `aria-hidden="true"` on the SVG itself.
