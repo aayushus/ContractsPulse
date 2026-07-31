@@ -1368,7 +1368,7 @@
 								aria-label="Ask a question"
 								onkeydown={(e) => { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); sendChat(); } }}
 							></textarea>
-							<button class="btn btn-primary chat-send" onclick={sendChat} disabled={isChatLoading || !chatInput.trim()} aria-label="Send question">
+							<button class="btn btn-primary chat-send" onclick={sendChat} disabled={isChatLoading || !chatInput.trim()} aria-label="Send question" title="Send (Enter)">
 								{#if isChatLoading}
 									<span class="spinner spinner-sm"></span>
 								{:else}
