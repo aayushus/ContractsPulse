@@ -19,3 +19,6 @@
 ## 2026-07-22 - Stateful Widget Toggles
 **Learning:** When implementing stateful widgets (like chat sidebars or modals) controlled by an icon-only button (FAB), it's critical that the button's `aria-label`, `title`, and visual icon dynamically change to reflect the next possible action (e.g. "Open" vs "Close"), rather than remaining static. Static labels confuse screen reader users and mouse users who rely on tooltips, while static icons fail to afford the dismiss action.
 **Action:** Always bind `aria-label`, `title`, and the SVG icon to the widget's open/close state, include `aria-expanded`, and hide inner SVGs with `aria-hidden="true"`.
+## 2024-05-24 - Accessibility improvements: Keyboard Shortcuts and ARIA booleans
+**Learning:** We need to visually expose keyboard shortcuts using `title` to help users discover them. In addition, when binding dynamic boolean state to `aria-expanded` in Svelte, we must use `!!` to force the boolean coercion to a string that screen readers can parse correctly.
+**Action:** When creating form submissions with keyboard shortcuts, always add a `title` attribute to visually indicate the shortcut. Always use `!!` for `aria-expanded` when binding to boolean states.
