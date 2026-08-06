@@ -19,3 +19,7 @@
 ## 2026-07-22 - Stateful Widget Toggles
 **Learning:** When implementing stateful widgets (like chat sidebars or modals) controlled by an icon-only button (FAB), it's critical that the button's `aria-label`, `title`, and visual icon dynamically change to reflect the next possible action (e.g. "Open" vs "Close"), rather than remaining static. Static labels confuse screen reader users and mouse users who rely on tooltips, while static icons fail to afford the dismiss action.
 **Action:** Always bind `aria-label`, `title`, and the SVG icon to the widget's open/close state, include `aria-expanded`, and hide inner SVGs with `aria-hidden="true"`.
+
+## 2026-08-06 - Expose keyboard shortcuts
+**Learning:** Invisible keyboard shortcuts (like Enter to send) are helpful, but exposing them visually (e.g. via `title` tooltips) greatly improves discoverability and UX for power users, while adding `aria-hidden="true"` to decorative inner SVGs ensures assistive technology isn't cluttered.
+**Action:** Always document hidden keyboard shortcuts on their associated action buttons via `title` or tooltips, and ensure inner SVGs are properly hidden from screen readers.
