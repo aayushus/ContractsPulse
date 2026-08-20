@@ -226,7 +226,7 @@ def _export_pdf(job_id: str, dest: Path) -> None:
         from reportlab.lib.units import inch
         from reportlab.lib import colors
         from reportlab.platypus import (
-            SimpleDocTemplate, Paragraph, Spacer, HRFlowable, Table as RLTable, TableStyle
+            SimpleDocTemplate, Paragraph, Spacer, HRFlowable
         )
     except ImportError:
         console.print("[red]reportlab is required for PDF export.[/]")
