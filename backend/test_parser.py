@@ -198,3 +198,14 @@ def test_extract_contract_metadata_full():
     assert res["contract_term"] == "term of two (2) year"
     assert res["expiry_date"] == "2027-01-01"
     assert res["renewal_notice_days"] == 30
+
+def test_extract_contract_metadata_expiry_date_invalid():
+    # February 29, 2023 is invalid (not a leap year)
+    text = "This Agreement shall expire on February 29, 2023."
+    res = extract_contract_metadata(text)
+    assert res["expiry_date"] is None
+
+    # Invalid month and day format
+    text2 = "expiration date: 13/45/2023"
+    res2 = extract_contract_metadata(text2)
+    assert res2["expiry_date"] is None
