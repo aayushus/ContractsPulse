@@ -352,11 +352,11 @@
 					aria-label="Ask Sage assistant"
 					onkeydown={(e) => { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); sendAssistant(); } }}
 				></textarea>
-				<button class="btn btn-primary assistant-send" type="button" onclick={sendAssistant} disabled={assistantLoading || !assistantInput.trim()} aria-label="Send">
+				<button class="btn btn-primary assistant-send" type="button" onclick={sendAssistant} disabled={assistantLoading || !assistantInput.trim()} aria-label="Send" title="Send (Enter)">
 					{#if assistantLoading}
 						<span class="spinner spinner-sm"></span>
 					{:else}
-						<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M22 2L11 13"/><path d="M22 2l-7 20-4-9-9-4z"/></svg>
+						<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="M22 2L11 13"/><path d="M22 2l-7 20-4-9-9-4z"/></svg>
 					{/if}
 				</button>
 			</div>
