@@ -1493,8 +1493,8 @@ async def get_calendar(
             try:
                 expiry_date_parsed = date.fromisoformat(expiry_date_str)
                 days_until_expiry = (expiry_date_parsed - today).days
-            except Exception:
-                pass
+            except Exception as e:
+                print(f"Error parsing expiry date '{expiry_date_str}': {e}")
 
         # Compute urgency level
         if days_until_expiry is not None:
