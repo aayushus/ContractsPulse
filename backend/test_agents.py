@@ -1,4 +1,4 @@
-from backend.app.agents import _heuristic_risk
+from app.agents import _heuristic_risk
 
 def test_heuristic_risk_critical():
     """Test that two critical keywords result in CRITICAL risk (score >= 6)."""
