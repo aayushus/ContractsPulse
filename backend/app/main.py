@@ -1006,7 +1006,7 @@ async def get_contract_clauses(
     }
 
 @app.get("/api/v1/contracts")
-async def list_contracts(
+def list_contracts(
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user)
 ):
