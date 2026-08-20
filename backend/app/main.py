@@ -2,7 +2,7 @@ import os
 import bcrypt
 import jwt
 import re
-from datetime import datetime, timedelta, timezone
+from datetime import datetime, timezone, timedelta
 from fastapi import FastAPI, UploadFile, File, BackgroundTasks, HTTPException, Depends, Header
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
@@ -159,8 +159,8 @@ async def create_contract_from_text(
         raise HTTPException(status_code=400, detail="text is required")
 
     meta = extract_contract_metadata(raw_text)
-    from datetime import datetime
-    upload_date = datetime.utcnow().date().isoformat()
+    from datetime import datetime, timezone
+    upload_date = datetime.now(timezone.utc).date().isoformat()
     std_name = standardized_filename(meta, upload_date)
     text_hash = compute_text_hash(raw_text)
 
@@ -728,8 +728,8 @@ async def upload_contract(
     # 2. Extract Text and Hash
     file_hash, raw_text = await extract_text_from_pdf(file_bytes)
     meta = extract_contract_metadata(raw_text)
-    from datetime import datetime
-    upload_date = datetime.utcnow().date().isoformat()
+    from datetime import datetime, timezone
+    upload_date = datetime.now(timezone.utc).date().isoformat()
     std_name = standardized_filename(meta, upload_date)
     
     # Check if exists (specifically owned by current_user)
@@ -821,9 +821,9 @@ async def reprocess_contract(
     # Wipe existing clauses
     db.query(ContractClause).filter(ContractClause.contract_id == contract_id).delete()
     
-    from datetime import datetime
+    from datetime import datetime, timezone
     meta = extract_contract_metadata(raw_text)
-    upload_date = datetime.utcnow().date().isoformat()
+    upload_date = datetime.now(timezone.utc).date().isoformat()
     contract.filename = standardized_filename(meta, upload_date)
 
     contract.status = ContractStatus.PROCESSING
