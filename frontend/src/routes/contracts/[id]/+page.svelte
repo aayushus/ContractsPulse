@@ -93,15 +93,6 @@
 	let hoveredClauseId = $state<string | null>(null);
 	let selectedClauseId = $state<string | null>(null);
 
-	function escapeHtml(text: string) {
-		return text
-			.replace(/&/g, '&amp;')
-			.replace(/</g, '&lt;')
-			.replace(/>/g, '&gt;')
-			.replace(/"/g, '&quot;')
-			.replace(/'/g, '&#039;');
-	}
-
 	function formatDocumentName(filename: string) {
 		if (!filename) return '';
 		let clean = filename.replace(/\.[a-zA-Z0-9]+$/, '');
@@ -109,10 +100,14 @@
 		return clean.replace(/\b\w/g, c => c.toUpperCase());
 	}
 
-	let highlightedHtml = $derived.by(() => {
+	type Token =
+		| { type: 'text'; content: string }
+		| { type: 'highlight'; content: string; clauseId: string; riskClass: string; activeClass: string; badgeText: string };
+
+	let highlightedTokens = $derived.by(() => {
 		const rawText = contract?.metadata_json?.raw_text;
-		if (!rawText) return '';
-		if (clauses.length === 0) return escapeHtml(rawText);
+		if (!rawText) return [];
+		if (clauses.length === 0) return [{ type: 'text', content: rawText } as Token];
 
 		interface Match {
 			start: number;
@@ -147,12 +142,12 @@
 
 		matches.sort((a, b) => a.start - b.start);
 
-		let result = '';
+		let tokens: Token[] = [];
 		let currentIndex = 0;
 
 		matches.forEach((match) => {
 			if (match.start > currentIndex) {
-				result += escapeHtml(rawText.slice(currentIndex, match.start));
+				tokens.push({ type: 'text', content: rawText.slice(currentIndex, match.start) });
 			}
 
 			const isHovered = hoveredClauseId === match.clause.id;
@@ -175,16 +170,23 @@
 			const cleanType = match.clause.clause_type.toUpperCase().trim();
 			let badgeText = badgePrefixMap[cleanType] || cleanType.slice(0, 3);
 
-			result += `<span class="clause-highlight ${riskClass} ${activeClass}" data-clause-id="${match.clause.id}" id="highlight-${match.clause.id}"><span class="highlight-badge">${escapeHtml(badgeText)}</span>${escapeHtml(match.clause.text_content)}</span>`;
+			tokens.push({
+				type: 'highlight',
+				content: match.clause.text_content,
+				clauseId: match.clause.id,
+				riskClass,
+				activeClass,
+				badgeText
+			});
 
 			currentIndex = match.end;
 		});
 
 		if (currentIndex < rawText.length) {
-			result += escapeHtml(rawText.slice(currentIndex));
+			tokens.push({ type: 'text', content: rawText.slice(currentIndex) });
 		}
 
-		return result;
+		return tokens;
 	});
 
 	type ClauseMarker = { clauseId: string; risk: string; topPct: number };
@@ -932,7 +934,15 @@
 				<!-- svelte-ignore a11y_mouse_events_have_key_events -->
 				<div class="document-paper" onclick={handleDocumentClick} onmouseover={handleDocumentMouseOver} onmouseout={handleDocumentMouseOut}>
 					{#if contract.metadata_json?.raw_text}
-						{@html highlightedHtml}
+						{#each highlightedTokens as token}
+							{#if token.type === 'text'}
+								{token.content}
+							{:else}
+								<span class="clause-highlight {token.riskClass} {token.activeClass}" data-clause-id={token.clauseId} id="highlight-{token.clauseId}">
+									<span class="highlight-badge">{token.badgeText}</span>{token.content}
+								</span>
+							{/if}
+						{/each}
 					{:else if contract.status === 'PROCESSING'}
 						<div class="document-placeholder">
 							<span class="spinner spinner-md"></span>
