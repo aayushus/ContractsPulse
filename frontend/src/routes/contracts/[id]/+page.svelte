@@ -921,6 +921,8 @@
 								style="top: {m.topPct * 100}%;"
 								onclick={() => jumpToClause(m.clauseId)}
 								title={m.risk}
+								aria-label="Jump to {m.risk.toLowerCase()} risk clause"
+								aria-pressed={selectedClauseId === m.clauseId}
 							></button>
 						{/each}
 					</div>
