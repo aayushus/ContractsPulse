@@ -1107,7 +1107,7 @@ async def list_all_risks(
 
 
 @app.get("/api/v1/contracts/{contract_id}")
-async def get_contract(
+def get_contract(
     contract_id: str,
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user)
