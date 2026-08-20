@@ -1935,6 +1935,9 @@ async def compare_contract_to_template(
         max_sim_indices = []
         similarities = []
 
+    # Compile regex outside of the loop for performance
+    pattern = re.compile(r"[A-Za-z]{5,}")
+
     for i, para in enumerate(paras):
         nearest_clause = None
 
@@ -1949,7 +1952,7 @@ async def compare_contract_to_template(
 
         # Use a conservative heuristic:
         # if clause type doesn't overlap with the para keywords, treat as potentially missing.
-        key = " ".join(re.findall(r"[A-Za-z]{5,}", para.lower())[:12])
+        key = " ".join(pattern.findall(para.lower())[:12])
         if key and key not in ((nearest_clause.text_content or "").lower()):
             missing_sections.append({"index": i, "template_excerpt": para[:260], "nearest_clause_type": nearest_clause.clause_type})
 
