@@ -1,3 +1,4 @@
+from unittest.mock import patch
 from backend.app.main import verify_password, get_password_hash
 
 def test_verify_password_correct():
@@ -18,3 +19,10 @@ def test_verify_password_malformed_hash():
     password = "secure_password123"
     malformed_hash = "not_a_valid_bcrypt_hash"
     assert verify_password(password, malformed_hash) is False, "Expected False for malformed hash"
+
+@patch('bcrypt.checkpw', side_effect=Exception("Simulated exception"))
+def test_verify_password_exception(mock_checkpw):
+    """Test that verify_password catches unexpected exceptions and returns False."""
+    password = "secure_password123"
+    hashed = get_password_hash(password)
+    assert verify_password(password, hashed) is False, "Expected False when an exception is raised"
