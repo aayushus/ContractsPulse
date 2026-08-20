@@ -1,7 +1,6 @@
 from unittest.mock import patch
 from pathlib import Path
 from typer.testing import CliRunner
-import pytest
 
 from cli.contractpulse import app
 
