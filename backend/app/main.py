@@ -953,7 +953,7 @@ async def contract_status(
     }
 
 @app.get("/api/v1/contracts/{contract_id}/clauses")
-async def get_contract_clauses(
+def get_contract_clauses(
     contract_id: str,
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user)
