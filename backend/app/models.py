@@ -1,5 +1,5 @@
 import uuid
-from datetime import datetime
+from datetime import datetime, timezone
 from sqlalchemy import Column, String, DateTime, ForeignKey, Text, Enum, Boolean
 from sqlalchemy.dialects.postgresql import UUID, JSONB
 from sqlalchemy.orm import relationship
@@ -8,13 +8,17 @@ import enum
 
 from .database import Base
 
+def get_utc_now():
+    return datetime.now(timezone.utc)
+
+
 class User(Base):
     __tablename__ = "users"
 
     id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
     email = Column(String, unique=True, index=True, nullable=False)
     hashed_password = Column(String, nullable=False)
-    created_at = Column(DateTime, default=datetime.utcnow)
+    created_at = Column(DateTime, default=get_utc_now)
 
     contracts = relationship("Contract", back_populates="user", cascade="all, delete-orphan")
 
@@ -42,8 +46,8 @@ class Contract(Base):
     # Store aggregated analysis like overall risk score, key obligations, etc.
     metadata_json = Column(JSONB, default={})
     
-    created_at = Column(DateTime, default=datetime.utcnow)
-    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+    created_at = Column(DateTime, default=get_utc_now)
+    updated_at = Column(DateTime, default=get_utc_now, onupdate=get_utc_now)
 
     # Relationships
     clauses = relationship("ContractClause", back_populates="contract", cascade="all, delete-orphan")
@@ -84,7 +88,7 @@ class ContractEvent(Base):
     message = Column(Text, nullable=False)
     payload_json = Column(JSONB, default={})
 
-    created_at = Column(DateTime, default=datetime.utcnow, index=True)
+    created_at = Column(DateTime, default=get_utc_now, index=True)
 
 
 class ClauseFeedback(Base):
@@ -99,7 +103,7 @@ class ClauseFeedback(Base):
     clause_id = Column(UUID(as_uuid=True), ForeignKey("contract_clauses.id"), nullable=False, index=True)
     is_risky = Column(Boolean, nullable=False)  # True = user says risky; False = user says not risky
     note = Column(Text, nullable=True)
-    created_at = Column(DateTime, default=datetime.utcnow, index=True)
+    created_at = Column(DateTime, default=get_utc_now, index=True)
 
 
 class ReminderType(str, enum.Enum):
@@ -127,7 +131,7 @@ class ContractReminder(Base):
     body = Column(Text, nullable=True)
 
     letter_json = Column(JSONB, default={})
-    created_at = Column(DateTime, default=datetime.utcnow, index=True)
+    created_at = Column(DateTime, default=get_utc_now, index=True)
 
 
 class ContractTemplate(Base):
@@ -140,4 +144,4 @@ class ContractTemplate(Base):
     description = Column(Text, nullable=True)
     raw_text = Column(Text, nullable=False)
 
-    created_at = Column(DateTime, default=datetime.utcnow, index=True)
+    created_at = Column(DateTime, default=get_utc_now, index=True)
