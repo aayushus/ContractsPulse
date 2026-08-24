@@ -5,6 +5,10 @@ import hashlib
 sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
 
 from backend.app.parser import _slugify, compute_file_hash, normalize_contract_text, compute_text_hash, extract_contract_metadata
+import pytest
+from unittest.mock import patch, MagicMock
+from backend.app.parser import _extract_text_from_pdf_sync, extract_text_from_pdf
+
 
 def test_slugify_empty_string():
     assert _slugify("") == ""
@@ -198,3 +202,49 @@ def test_extract_contract_metadata_full():
     assert res["contract_term"] == "term of two (2) year"
     assert res["expiry_date"] == "2027-01-01"
     assert res["renewal_notice_days"] == 30
+
+
+def test__extract_text_from_pdf_sync():
+    file_bytes = b"dummy pdf content"
+    expected_hash = compute_file_hash(file_bytes)
+
+    with patch("backend.app.parser.fitz.open") as mock_fitz_open:
+        mock_doc = MagicMock()
+        mock_doc.__len__.return_value = 2
+
+        mock_page_1 = MagicMock()
+        mock_page_1.get_text.return_value = "Page 1 text"
+
+        mock_page_2 = MagicMock()
+        mock_page_2.get_text.return_value = "Page 2 text"
+
+        def load_page_side_effect(i):
+            if i == 0:
+                return mock_page_1
+            elif i == 1:
+                return mock_page_2
+            raise IndexError("Index out of bounds")
+
+        mock_doc.load_page.side_effect = load_page_side_effect
+        mock_fitz_open.return_value = mock_doc
+
+        file_hash, text = _extract_text_from_pdf_sync(file_bytes)
+
+        mock_fitz_open.assert_called_once_with(stream=file_bytes, filetype="pdf")
+        mock_doc.close.assert_called_once()
+        assert file_hash == expected_hash
+        assert text == "Page 1 text\nPage 2 text"
+
+@pytest.mark.asyncio
+async def test_extract_text_from_pdf():
+    file_bytes = b"dummy pdf content async"
+    expected_hash = compute_file_hash(file_bytes)
+
+    with patch("backend.app.parser._extract_text_from_pdf_sync") as mock_sync_func:
+        mock_sync_func.return_value = (expected_hash, "Async page text")
+
+        file_hash, text = await extract_text_from_pdf(file_bytes)
+
+        mock_sync_func.assert_called_once_with(file_bytes)
+        assert file_hash == expected_hash
+        assert text == "Async page text"
