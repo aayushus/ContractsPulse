@@ -241,9 +241,9 @@ async def startup_event():
         
     Base.metadata.create_all(bind=engine)
     
-    # Re-create index as non-unique
+    # Re-create index to enforce unique constraint per user
     with engine.begin() as conn:
-        conn.execute(text("CREATE INDEX IF NOT EXISTS ix_contracts_file_hash ON contracts(file_hash);"))
+        conn.execute(text("CREATE UNIQUE INDEX IF NOT EXISTS ix_contracts_file_hash_user_id ON contracts(file_hash, user_id);"))
         
     # Lightweight schema catch-up for additive columns (demo-friendly; avoids migrations).
     with engine.begin() as conn:
