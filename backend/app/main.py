@@ -10,11 +10,11 @@ from sqlalchemy.orm import Session
 from sqlalchemy import text
 
 # OpenTelemetry Tracing Setup for Jaeger
-from opentelemetry import trace
 from opentelemetry.sdk.trace import TracerProvider
 from opentelemetry.sdk.trace.export import BatchSpanProcessor
 from opentelemetry.exporter.otlp.proto.grpc.trace_exporter import OTLPSpanExporter
 from opentelemetry.sdk.resources import Resource
+import opentelemetry.trace
 
 # Security & JWT settings
 JWT_SECRET = os.getenv("JWT_SECRET")
@@ -63,7 +63,7 @@ provider = TracerProvider(resource=resource)
 endpoint = os.getenv("OTEL_EXPORTER_OTLP_ENDPOINT", "http://jaeger:4317")
 exporter = OTLPSpanExporter(endpoint=endpoint)
 provider.add_span_processor(BatchSpanProcessor(exporter))
-trace.set_tracer_provider(provider) 
+opentelemetry.trace.set_tracer_provider(provider)
 
 app = FastAPI(
     title="ContractsPulse API",
