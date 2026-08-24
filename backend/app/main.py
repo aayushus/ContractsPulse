@@ -1588,7 +1588,7 @@ async def get_calendar(
 # ---------------------------------------------------------------------------
 
 @app.get("/api/v1/vendors")
-async def get_vendors(
+def get_vendors(
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user)
 ):
@@ -1596,6 +1596,82 @@ async def get_vendors(
     Groups all user contracts by vendor/counterparty name.
     Returns aggregated risk info per vendor.
     """
+    # Performance Optimization: Use Postgres JSONB operators and GROUP BY directly if using Postgres
+    if db.bind.dialect.name == "postgresql":
+        query = text("""
+            WITH aggregated AS (
+                SELECT
+                    COALESCE(NULLIF(TRIM(metadata_json->>'company'), ''), 'Unknown Vendor') AS vendor_name,
+                    SUM(COALESCE((metadata_json->'risk_counts'->>'CRITICAL')::int, 0)) AS total_critical,
+                    SUM(COALESCE((metadata_json->'risk_counts'->>'HIGH')::int, 0)) AS total_high,
+                    MAX(
+                        CASE
+                            WHEN status = 'COMPLETED' THEN
+                                CASE
+                                    WHEN COALESCE((metadata_json->'risk_counts'->>'CRITICAL')::int, 0) > 0 THEN 3
+                                    WHEN COALESCE((metadata_json->'risk_counts'->>'HIGH')::int, 0) > 0 THEN 2
+                                    WHEN COALESCE((metadata_json->'risk_counts'->>'MEDIUM')::int, 0) > 0 THEN 1
+                                    ELSE 0
+                                END
+                            ELSE 0
+                        END
+                    ) AS worst_risk_score,
+                    jsonb_agg(
+                        jsonb_build_object(
+                            'id', id,
+                            'filename', filename,
+                            'status', status,
+                            'overall_risk', CASE
+                                WHEN status = 'COMPLETED' THEN
+                                    CASE
+                                        WHEN COALESCE((metadata_json->'risk_counts'->>'CRITICAL')::int, 0) > 0 THEN 'CRITICAL'
+                                        WHEN COALESCE((metadata_json->'risk_counts'->>'HIGH')::int, 0) > 0 THEN 'HIGH'
+                                        WHEN COALESCE((metadata_json->'risk_counts'->>'MEDIUM')::int, 0) > 0 THEN 'MEDIUM'
+                                        ELSE 'LOW'
+                                    END
+                                ELSE NULL
+                            END,
+                            'contract_type', metadata_json->>'contract_type',
+                            'expiry_date', metadata_json->>'expiry_date',
+                            'created_at', created_at
+                        ) ORDER BY created_at DESC
+                    ) AS contracts
+                FROM contracts
+                WHERE user_id = :user_id
+                GROUP BY 1
+            )
+            SELECT
+                vendor_name AS name,
+                contracts,
+                CASE
+                    WHEN worst_risk_score = 3 THEN 'CRITICAL'
+                    WHEN worst_risk_score = 2 THEN 'HIGH'
+                    WHEN worst_risk_score = 1 THEN 'MEDIUM'
+                    ELSE 'LOW'
+                END AS worst_risk,
+                total_critical,
+                total_high,
+                worst_risk_score,
+                jsonb_array_length(contracts) AS contract_count
+            FROM aggregated
+            ORDER BY worst_risk_score DESC, contract_count DESC
+        """)
+
+        result = db.execute(query, {"user_id": current_user.id}).fetchall()
+
+        vendors = []
+        for r in result:
+            vendors.append({
+                "name": r.name,
+                "contracts": r.contracts,
+                "worst_risk": r.worst_risk,
+                "total_critical": r.total_critical,
+                "total_high": r.total_high
+            })
+
+        return {"vendors": vendors}
+
+    # Fallback for SQLite/Tests
     contracts = (
         db.query(Contract)
         .filter(Contract.user_id == current_user.id)
