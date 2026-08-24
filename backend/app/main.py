@@ -1053,38 +1053,29 @@ async def list_all_risks(
     """
     Fetch all high and critical severity risk clauses across all completed contracts owned by the current user.
     """
-    contracts = (
-        db.query(Contract)
-        .filter(Contract.user_id == current_user.id, Contract.status == ContractStatus.COMPLETED)
-        .all()
-    )
-    contract_ids = [c.id for c in contracts]
-    contract_map = {str(c.id): c for c in contracts}
-    
-    if not contract_ids:
-        return {"risks": []}
-        
-    # Query clauses with HIGH or CRITICAL risk
+    # Query clauses joined with contracts to avoid fetching all contracts into memory
     clauses = (
-        db.query(ContractClause)
+        db.query(ContractClause, Contract)
+        .join(Contract, ContractClause.contract_id == Contract.id)
         .filter(
-            ContractClause.contract_id.in_(contract_ids),
+            Contract.user_id == current_user.id,
+            Contract.status == ContractStatus.COMPLETED,
             ContractClause.risk_level.in_([RiskLevel.HIGH, RiskLevel.CRITICAL])
         )
         .all()
     )
     
+    if not clauses:
+        return {"risks": []}
+
     # Sort clauses: CRITICAL first, then HIGH
     clauses = sorted(
         clauses,
-        key=lambda c: _SEVERITY_ORDER.get(c.risk_level.value if c.risk_level else "HIGH", 9)
+        key=lambda item: _SEVERITY_ORDER.get(item[0].risk_level.value if item[0].risk_level else "HIGH", 9)
     )
     
     result = []
-    for c in clauses:
-        contract_obj = contract_map.get(str(c.contract_id))
-        if not contract_obj:
-            continue
+    for c, contract_obj in clauses:
             
         # Resolve redline suggestion
         redline = c.redline_suggestion
