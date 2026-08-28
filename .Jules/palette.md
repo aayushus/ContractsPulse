@@ -22,3 +22,6 @@
 ## 2024-08-07 - Exposing Invisible Keyboard Shortcuts
 **Learning:** When users can trigger an action (like sending a chat message) via a keyboard shortcut (e.g. Enter), this functionality should not remain invisible. By adding a `title` attribute hint (e.g., `title="Send (Enter)"`) to the related button, we expose this shortcut visually to mouse users or those relying on tooltips, increasing the discoverability of a power-user feature while ensuring screen readers already have the primary `aria-label`.
 **Action:** Always include keyboard shortcut hints in `title` or tooltips for buttons that possess an invisible keyboard trigger (like Enter/Escape).
+## 2023-10-27 - [Screen Reader Overrides on Complex Buttons]
+**Learning:** When a button contains rich visual context (like badges, sub-text, or numbers in the vendor cards), adding an `aria-label` to the main `<button>` completely overrides all that inner content for screen readers. This breaks WCAG 2.5.3 (Label in Name) and causes users to lose crucial context.
+**Action:** Instead of `aria-label` on the parent, use a visually hidden `.sr-only` span inside the button alongside the text/badges to provide the necessary context without overriding the existing content.

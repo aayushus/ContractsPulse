@@ -236,10 +236,12 @@
 </div>
 
 {#snippet contractCardContent(item: CalendarItem)}
+	<span class="sr-only">View document:</span>
 	<div class="card-top">
 		<div class="card-title-row">
 			<span class="card-name">{formatDocumentName(item.filename)}</span>
 			{#if item.overall_risk}
+				<span class="sr-only">Risk level:</span>
 				<span class="risk-chip risk-chip-{item.overall_risk.toLowerCase()}">{item.overall_risk}</span>
 			{/if}
 		</div>
@@ -286,7 +288,7 @@
 	<div class="card-footer">
 		<span class="status-dot status-{item.status.toLowerCase()}"></span>
 		<span class="status-text text-tertiary">{item.status}</span>
-		<svg class="card-arrow" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5">
+		<svg class="card-arrow" aria-hidden="true" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5">
 			<line x1="5" y1="12" x2="19" y2="12"/>
 			<polyline points="12 5 19 12 12 19"/>
 		</svg>
