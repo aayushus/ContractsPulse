@@ -80,9 +80,11 @@
 						</div>
 						<div class="vendor-badges">
 							<span class="badge badge-{v.worst_risk === 'CRITICAL' || v.worst_risk === 'HIGH' ? 'danger' : v.worst_risk === 'MEDIUM' ? 'warning' : 'success'}">
+								<span class="sr-only">Worst risk level:</span>
 								{v.worst_risk}
 							</span>
-							<svg class="chev" class:open={expanded[v.name]} width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="6 9 12 15 18 9"/></svg>
+							<svg class="chev" class:open={expanded[v.name]} aria-hidden="true" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="6 9 12 15 18 9"/></svg>
+							<span class="sr-only">{expanded[v.name] ? 'Collapse vendor group' : 'Expand vendor group'}</span>
 						</div>
 					</button>
 
@@ -90,6 +92,7 @@
 						<div class="vendor-contracts">
 							{#each v.contracts as c (c.id)}
 								<button class="vendor-contract" onclick={() => goto(`/contracts/${c.id}`)}>
+									<span class="sr-only">View contract:</span>
 									<div class="vc-left">
 										<div class="vc-name">{formatDocumentName(c.filename)}</div>
 										<div class="vc-meta text-tertiary">{c.contract_type || 'Contract'} · {c.status}</div>
