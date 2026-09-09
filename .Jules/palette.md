@@ -22,3 +22,6 @@
 ## 2024-08-07 - Exposing Invisible Keyboard Shortcuts
 **Learning:** When users can trigger an action (like sending a chat message) via a keyboard shortcut (e.g. Enter), this functionality should not remain invisible. By adding a `title` attribute hint (e.g., `title="Send (Enter)"`) to the related button, we expose this shortcut visually to mouse users or those relying on tooltips, increasing the discoverability of a power-user feature while ensuring screen readers already have the primary `aria-label`.
 **Action:** Always include keyboard shortcut hints in `title` or tooltips for buttons that possess an invisible keyboard trigger (like Enter/Escape).
+## 2026-09-09 - [Added aria-hidden to decorative SVGs]
+**Learning:** Screen readers may announce purely decorative SVGs within links or buttons if they are not explicitly hidden, causing redundant readout alongside the text (e.g. 'unlabeled graphic Dashboard').
+**Action:** When adding icons alongside descriptive text in components like navigation links or toasts, always add `aria-hidden="true"` to the `<svg>` element.
