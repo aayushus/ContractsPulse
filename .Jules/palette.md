@@ -1,24 +1,3 @@
-## 2024-07-03 - [Accordion ARIA State]
-**Learning:** In the Svelte frontend, when implementing accordion toggles using `<button>`, standard screen reader visibility of the expanded state (`aria-expanded`) must be manually included using `aria-expanded={!!stateVar}` to correctly output true/false boolean string values. This pattern is essential for any custom-built expansion panels.
-**Action:** Always verify accordion-like buttons and disclosure widgets in custom Svelte components contain dynamically bound `aria-expanded` attributes connected to their collapse/expand state variables.
-## 2024-05-19 - Suggestion Pill Auto-Submit
-**Learning:** In chat interfaces, users expect that clicking a "suggestion" or "example" prompt not only fills in the input box but also immediately triggers the submission. Previously, suggestion pills only filled the input, requiring an extra click on the "Send" button.
-**Action:** Always bind auto-submit behaviors (`sendChat()`) along with setting the input state when implementing suggestion chips.
-## 2026-07-11 - Added ARIA attributes to custom dropdown menus
-**Learning:** Custom dropdown triggers (like ) require  and a dynamic  state to properly communicate their function and state to screen readers.
-**Action:** Always include these ARIA attributes when building or modifying custom combobox or select button elements.
-## 2024-05-24 - Added ARIA attributes to custom dropdown menus
-**Learning:** Custom dropdown triggers (like `custom-select-trigger`) require `aria-haspopup="listbox"` and a dynamic `aria-expanded` state to properly communicate their function and state to screen readers.
-**Action:** Always include these ARIA attributes when building or modifying custom combobox or select button elements.
-## 2024-07-28 - [ARIA Pressed on Filter Pills]
-**Learning:** Custom UI filter groups (like `filter-pill`s) acting as mutually exclusive toggles or tabs must include `aria-pressed={state === 'VALUE'}` attributes. Relying solely on CSS `.active` classes leaves screen reader users completely unaware of which filter is currently active.
-**Action:** Always verify that custom segment controls and filter pills contain dynamically bound ARIA attributes (e.g. `aria-pressed` or `aria-selected`) mirroring their visual active state.
-## 2026-07-16 - Custom Dropdown Popup
-**Learning:** Screen readers require knowledge of what type of popup an element spawns. When making a custom dropdown trigger button, simply having `aria-expanded` is not enough; it must explicitly state `aria-haspopup="listbox"`.
-**Action:** Always include `aria-haspopup="listbox"` (or appropriate role) on elements functioning as custom select triggers to satisfy accessibility standards.
-## 2026-07-22 - Stateful Widget Toggles
-**Learning:** When implementing stateful widgets (like chat sidebars or modals) controlled by an icon-only button (FAB), it's critical that the button's `aria-label`, `title`, and visual icon dynamically change to reflect the next possible action (e.g. "Open" vs "Close"), rather than remaining static. Static labels confuse screen reader users and mouse users who rely on tooltips, while static icons fail to afford the dismiss action.
-**Action:** Always bind `aria-label`, `title`, and the SVG icon to the widget's open/close state, include `aria-expanded`, and hide inner SVGs with `aria-hidden="true"`.
-## 2024-08-07 - Exposing Invisible Keyboard Shortcuts
-**Learning:** When users can trigger an action (like sending a chat message) via a keyboard shortcut (e.g. Enter), this functionality should not remain invisible. By adding a `title` attribute hint (e.g., `title="Send (Enter)"`) to the related button, we expose this shortcut visually to mouse users or those relying on tooltips, increasing the discoverability of a power-user feature while ensuring screen readers already have the primary `aria-label`.
-**Action:** Always include keyboard shortcut hints in `title` or tooltips for buttons that possess an invisible keyboard trigger (like Enter/Escape).
+## 2024-05-24 - Hiding decorative icons inside descriptive buttons
+**Learning:** Decorative SVG icons that sit inside a button alongside descriptive text should be hidden from screen readers using `aria-hidden="true"`. Otherwise, screen readers may announce them as unlabelled graphics, which is confusing and redundant since the button already has text.
+**Action:** When adding icons inside text buttons, always apply `aria-hidden="true"` to the `<svg>` element.
