@@ -395,7 +395,7 @@
 									<button class="btn btn-secondary btn-compact" onclick={() => goto(`/contracts/${r.contract_id}`)}>View document</button>
 									<button class="btn btn-primary btn-compact" onclick={() => goto(`/contracts/${r.contract_id}?tab=clauses&search=${encodeURIComponent(r.clause_type)}&risk=${r.risk_level}`)}>
 										Resolve in Cockpit
-										<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><line x1="5" y1="12" x2="19" y2="12"/><polyline points="12 5 19 12 12 19"/></svg>
+										<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" aria-hidden="true"><line x1="5" y1="12" x2="19" y2="12"/><polyline points="12 5 19 12 12 19"/></svg>
 									</button>
 								</div>
 							</div>
